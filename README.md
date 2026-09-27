@@ -1,4 +1,4 @@
-# omarchy-network-plugin
+# elliot-network-plugin
 
 Stock Omarchy `omarchy.network` panel plugin (Wi-Fi list and connection state).
 
@@ -13,7 +13,7 @@ Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 ## Install (recommended)
 
 ```bash
-omarchy plugin add https://github.com/elliotalien/omarchy-network-plugin.git --enable
+omarchy plugin add https://github.com/elliotalien/elliot-network-plugin.git --enable
 ```
 
 Validate and reload:
@@ -26,7 +26,7 @@ omarchy restart shell
 ## Install (manual)
 
 ```bash
-git clone https://github.com/elliotalien/omarchy-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
+git clone https://github.com/elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
 omarchy plugin enable omarchy.network
 omarchy restart shell
 ```
@@ -34,7 +34,7 @@ omarchy restart shell
 Via SSH (if you use SSH keys):
 
 ```bash
-git clone git@github.com:elliotalien/omarchy-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
+git clone git@github.com:elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
 ```
 
 ## Notes
