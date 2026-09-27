@@ -96,6 +96,13 @@ Panel {
   readonly property bool selectedIsActiveRoute: !!info.iface && info.iface === selectedIface
   readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
   readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
+  // Header and bar-icon state reflects the live connection on any radio,
+  // not the dropdown selection. The list and the stats grid are per-adapter;
+  // the hero must stay truthful when viewing the idle radio. `networks`
+  // needs the scanner, so `anyWifiDeviceConnected` (a device flag, always
+  // live) drives `kind` while the network object only feeds the signal bars.
+  readonly property var activeWifiNetwork: findAnyConnectedWifiNetwork()
+  readonly property bool anyWifiDeviceConnected: isAnyWifiDeviceConnected()
   property var wifiNetworks: []
   property bool scanning: false
   property bool wifiStationAvailable: false
@@ -149,9 +156,9 @@ Panel {
   // within header actions, band pills, or DNS providers.
   property string focusSection: "dns"  // "header" | "band" | "dns" | "wifi"
   property int headerIndex: 0
-  readonly property bool canDisconnect: !!connectedWifiNetwork
+  readonly property bool canDisconnect: !!activeWifiNetwork
   readonly property bool headerHasDisconnect: false
-  readonly property bool canShareWifi: info.type === "wifi" && canShareNetwork(connectedWifiNetwork)
+  readonly property bool canShareWifi: info.type === "wifi" && canShareNetwork(activeWifiNetwork)
   // The hero switch is the Wi-Fi radio, so it only exists when there is a
   // radio to switch. On a wired box it would otherwise sit there reading
   // "off" beside a perfectly live Ethernet connection.
@@ -464,12 +471,20 @@ Panel {
   readonly property var wiredDevice: findDevice(DeviceType.Wired)
   readonly property string kind: {
     if (wiredDevice && wiredDevice.connected) return "ethernet"
-    if (connectedWifiNetwork) return "wifi"
+    if (anyWifiDeviceConnected) return "wifi"
+    if (activeWifiNetwork) return "wifi"
     return "disconnected"
   }
-  readonly property int signalStrength: connectedWifiNetwork
-    ? Math.round((connectedWifiNetwork.signalStrength || 0) * 100)
-    : -1
+  // Signal comes from the network object when the scan list has it; when the
+  // panel is closed the list can be empty while the device flag above is
+  // still live, so fall back to the cached value instead of flashing weak.
+  property int cachedSignalStrength: -1
+  readonly property int signalStrength: activeWifiNetwork
+    ? Math.round((activeWifiNetwork.signalStrength || 0) * 100)
+    : cachedSignalStrength
+  onActiveWifiNetworkChanged: {
+    if (activeWifiNetwork) cachedSignalStrength = Math.round((activeWifiNetwork.signalStrength || 0) * 100)
+  }
 
   function copyToClipboard(value) {
     if (!value || !root.bar) return
@@ -616,6 +631,53 @@ Panel {
       if (networks[i] && networks[i].connected) return networks[i]
     }
     return null
+  }
+
+  // Device-flag check: true if any radio reports connected, regardless of
+  // whether its scan list (which needs the scanner) currently has entries.
+  // This is what keeps the bar icon on "wifi" when the panel is closed or
+  // the dropdown views the idle adapter.
+  function isAnyWifiDeviceConnected() {
+    var devices = wifiDevices || []
+    // Also read the per-selection objects so the binding refreshes with them.
+    var selected = connectedWifiNetwork
+    if (selected) return true
+    for (var i = 0; i < devices.length; i++) {
+      var device = devices[i]
+      if (device && device.connected) return true
+    }
+    return false
+  }
+
+  // Global equivalent of findConnectedWifiNetwork: scans every radio so the
+  // header stays "wifi" while the dropdown views the idle adapter. Prefers
+  // the radio carrying the default route (info.iface) when both are up.
+  function findAnyConnectedWifiNetwork() {
+    // Explicit reads so the binding re-evaluates when the selection or the
+    // default route changes, even on early returns below.
+    var selected = connectedWifiNetwork
+    var selectedObjects = wifiNetworkObjects
+    var routeIface = (info && info.iface) ? String(info.iface) : ""
+    var devices = wifiDevices || []
+    var fallback = null
+    for (var i = 0; i < devices.length; i++) {
+      var device = devices[i]
+      if (!device) continue
+      // Read the device flag so scanner-off changes still re-evaluate.
+      var devConnected = !!device.connected
+      var networks = (device.networks) ? device.networks.values : []
+      // Keep the dependency on the selected device's list explicit.
+      if (device === wifiDevice) networks = selectedObjects || networks
+      for (var j = 0; j < networks.length; j++) {
+        if (networks[j] && networks[j].connected) {
+          if (!fallback) fallback = networks[j]
+          if (routeIface !== "" && adapterIface(device) === routeIface) return networks[j]
+        }
+      }
+      if (devConnected && !fallback && selected && device === wifiDevice) fallback = selected
+    }
+    if (fallback) return fallback
+    return selected
   }
 
   function syncWifiNetworks() {
@@ -811,7 +873,7 @@ Panel {
   }
 
   function disconnect(network) {
-    runNetworkAction("disconnect", network || connectedWifiNetwork, function(net) { net.disconnect() })
+    runNetworkAction("disconnect", network || activeWifiNetwork, function(net) { net.disconnect() })
   }
 
   // Disconnect from a row's SSID. Rows are primitive snapshots that can outlive
