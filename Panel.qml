@@ -80,12 +80,20 @@ Panel {
     return ""
   }
   function adapterLabel(device, index) {
-    return index === 0 ? "Wi-Fi" : "Wi-Fi " + (index + 1)
+    // wlp2s0 (PCI) is the main internal radio -> "Wi-Fi";
+    // systemd USB names end in uN (e.g. wlp0s20f0u1, the TP-Link dongle) -> "Wi-Fi 2".
+    var iface = adapterIface(device)
+    if (wifiDevices.length <= 1) return "Wi-Fi"
+    return (/u\d+$/.test(iface)) ? "Wi-Fi 2" : "Wi-Fi"
   }
   readonly property var adapterNames: wifiDevices.map(function(d, i) { return adapterLabel(d, i) })
   onWifiDevicesChanged: {
     if (adapterIndex > wifiDevices.length - 1) adapterIndex = Math.max(0, wifiDevices.length - 1)
   }
+  readonly property string selectedIface: adapterIface(wifiDevice)
+  // `info` always describes the default route, so its numbers only belong to
+  // the dropdown selection when the selected adapter carries that route.
+  readonly property bool selectedIsActiveRoute: !!info.iface && info.iface === selectedIface
   readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
   readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
   property var wifiNetworks: []
@@ -1271,35 +1279,35 @@ Panel {
           // a sample.
           InfoLabel { text: "Ping" }
           DetailValue {
-            text: root.formatPingLatency(root.internetPingLatency)
-            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
+            text: root.selectedIsActiveRoute ? root.formatPingLatency(root.internetPingLatency) : "--"
+            color: (root.selectedIsActiveRoute && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
           }
           InfoLabel { text: "Packet Loss" }
           DetailValue {
-            text: root.formatPacketLoss(root.internetPingPacketLoss)
-            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
+            text: root.selectedIsActiveRoute ? root.formatPacketLoss(root.internetPingPacketLoss) : "--"
+            color: (root.selectedIsActiveRoute && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
           }
 
           InfoLabel { text: "Receiving" }
-          DetailValue { text: root.hasTransferStats ? root.formatRate(root.downloadRate) : "--" }
+          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatRate(root.downloadRate) : "--" }
           InfoLabel { text: "Sending" }
-          DetailValue { text: root.hasTransferStats ? root.formatRate(root.uploadRate) : "--" }
+          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatRate(root.uploadRate) : "--" }
 
           InfoLabel { text: "Downloaded" }
-          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
+          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
           InfoLabel { text: "Uploaded" }
-          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
+          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
 
           InfoLabel { text: "IP Address" }
           DetailValue {
-            text: root.info.ip || "--"
-            copyable: !!root.info.ip
+            text: root.selectedIsActiveRoute ? (root.info.ip || "--") : "--"
+            copyable: root.selectedIsActiveRoute && !!root.info.ip
             tooltipText: "Copy IP"
           }
           InfoLabel { text: "Gateway" }
           DetailValue {
-            text: root.info.gateway || "--"
-            copyable: !!root.info.gateway
+            text: root.selectedIsActiveRoute ? (root.info.gateway || "--") : "--"
+            copyable: root.selectedIsActiveRoute && !!root.info.gateway
             tooltipText: "Copy gateway"
           }
         }
@@ -1748,7 +1756,7 @@ Panel {
       anchors.top: parent.top
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
-      implicitHeight: Math.max(networkIcon.implicitHeight, networkInfo.implicitHeight, rightAction.implicitHeight) + Style.spacing.rowPaddingX
+      implicitHeight: Math.max(networkIcon.implicitHeight, networkInfo.implicitHeight, rightAction.implicitHeight, connectButton.implicitHeight) + Style.spacing.rowPaddingX
 
       Text {
         id: networkIcon
@@ -1761,15 +1769,41 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
       }
 
-      // The right edge shows a lock for networks that require credentials and
-      // reveals Forget on hover. Known passwordless networks show Forget
-      // directly rather than reserving an invisible or misleading target.
+      // Explicit per-row action: Connect for available networks,
+      // Disconnect for the connected one. Same behavior as clicking the row.
+      Button {
+        id: connectButton
+        visible: !row.isBusy && !row.isPasswordOpen && !!row.net
+        text: row.isConnected ? "Disconnect" : "Connect"
+        tooltipText: row.isConnected ? "Disconnect from this network" : "Connect to this network"
+        fontSize: Style.font.bodySmall
+        foreground: root.bar.foreground
+        fontFamily: root.bar.fontFamily
+        horizontalPadding: Style.spacing.controlPaddingX
+        verticalPadding: Style.spacing.controlPaddingY
+        bordered: true
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        onClicked: {
+          if (!row.net || root.busy) return
+          root.cursorActive = true
+          root.focusSection = "wifi"
+          root.selectedIndex = row.index
+          root.wifiActionFocused = false
+          if (row.isConnected) { root.disconnectRow(row.net.ssid); return }
+          if (row.requiresCredentials && !row.isKnown) { root.openPasswordPrompt(row.net.ssid); return }
+          root.connectDirectly(row.net.ssid)
+        }
+      }
+
+      // The lock/forget glyph sits left of the Connect button when it shows.
       Item {
         id: rightAction
         visible: row.requiresCredentials || row.canForget
         width: Style.space(22)
         implicitHeight: lockIndicator.implicitHeight
-        anchors.right: parent.right
+        anchors.right: connectButton.visible ? connectButton.left : parent.right
+        anchors.rightMargin: connectButton.visible ? Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
@@ -1817,8 +1851,8 @@ Panel {
         spacing: Style.space(1)
         anchors.left: networkIcon.right
         anchors.leftMargin: Style.space(10)
-        anchors.right: rightAction.visible ? rightAction.left : parent.right
-        anchors.rightMargin: rightAction.visible ? Style.space(8) : 0
+        anchors.right: connectButton.visible ? connectButton.left : (rightAction.visible ? rightAction.left : parent.right)
+        anchors.rightMargin: (connectButton.visible || rightAction.visible) ? Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
 
         Text {

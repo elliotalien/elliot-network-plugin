@@ -1,8 +1,12 @@
 # elliot-network-plugin
 
 Custom Omarchy network panel plugin (Wi-Fi list and connection state),
-cloned from stock `omarchy.network` plus a themed Wi-Fi adapter switcher
-(Wi-Fi / Wi-Fi 2) under the header.
+cloned from stock `omarchy.network` with:
+
+- Themed Wi-Fi adapter switcher (Wi-Fi = internal, Wi-Fi 2 = external USB)
+  under the header (shows only with 2+ radios)
+- Explicit Connect / Disconnect buttons on each network row
+- Connection stats gated to the selected adapter (`--` when it isn't active)
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 `/usr/share/omarchy/shell/plugins/panels/network/`.
