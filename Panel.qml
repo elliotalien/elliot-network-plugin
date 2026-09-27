@@ -67,7 +67,25 @@ Panel {
   readonly property string connectionPhrase: connectionPhrases[connectionPhraseIndex % connectionPhrases.length]
   readonly property bool networkManagerAvailable: Networking.backend === NetworkBackendType.NetworkManager
   readonly property var networkDevices: Networking.devices ? Networking.devices.values : []
-  readonly property var wifiDevice: findDevice(DeviceType.Wifi)
+  // Adapter switcher: expose every Wi-Fi radio so the header dropdown can
+  // flip between e.g. Wi-Fi / Wi-Fi 2.
+  readonly property var wifiDevices: (networkDevices || []).filter(function(d) { return d && d.type === DeviceType.Wifi })
+  property int adapterIndex: 0
+  readonly property var wifiDevice: wifiDevices.length > 0 ? wifiDevices[Math.max(0, Math.min(adapterIndex, wifiDevices.length - 1))] : findDevice(DeviceType.Wifi)
+  function adapterIface(device) {
+    if (!device) return ""
+    if (device["interface"]) return String(device["interface"])
+    if (device.interfaceName) return String(device.interfaceName)
+    if (device.name) return String(device.name)
+    return ""
+  }
+  function adapterLabel(device, index) {
+    return index === 0 ? "Wi-Fi" : "Wi-Fi " + (index + 1)
+  }
+  readonly property var adapterNames: wifiDevices.map(function(d, i) { return adapterLabel(d, i) })
+  onWifiDevicesChanged: {
+    if (adapterIndex > wifiDevices.length - 1) adapterIndex = Math.max(0, wifiDevices.length - 1)
+  }
   readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
   readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
   property var wifiNetworks: []
@@ -1213,6 +1231,26 @@ Panel {
           }
         }
 
+      }
+
+      // Adapter switcher under the header (Wi-Fi / Wi-Fi 2…). Only shows
+      // when more than one Wi-Fi radio is present.
+      Dropdown {
+        id: adapterBox
+        visible: root.wifiDevices.length > 1
+        width: parent.width
+        showLabel: false
+        foreground: root.bar.foreground
+        fontFamily: root.bar.fontFamily
+        options: root.adapterNames
+        value: root.adapterNames[Math.max(0, Math.min(root.adapterIndex, root.adapterNames.length - 1))] || ""
+        onChanged: function(v) {
+          var idx = root.adapterNames.indexOf(v)
+          if (idx >= 0 && idx !== root.adapterIndex) {
+            root.adapterIndex = idx
+            root.refresh(true)
+          }
+        }
       }
 
       // Connection details: transfer metrics first, then IP/Gateway.

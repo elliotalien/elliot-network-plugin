@@ -1,6 +1,8 @@
 # elliot-network-plugin
 
-Stock Omarchy `omarchy.network` panel plugin (Wi-Fi list and connection state).
+Custom Omarchy network panel plugin (Wi-Fi list and connection state),
+cloned from stock `omarchy.network` plus a themed Wi-Fi adapter switcher
+(Wi-Fi / Wi-Fi 2) under the header.
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 `/usr/share/omarchy/shell/plugins/panels/network/`.
@@ -19,29 +21,28 @@ omarchy plugin add https://github.com/elliotalien/elliot-network-plugin.git --en
 Validate and reload:
 
 ```bash
-omarchy plugin validate ~/.config/omarchy/plugins/omarchy.network
+omarchy plugin validate ~/.config/omarchy/plugins/elliot.network
 omarchy restart shell
 ```
 
 ## Install (manual)
 
 ```bash
-git clone https://github.com/elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
-omarchy plugin enable omarchy.network
+git clone https://github.com/elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/elliot.network
+omarchy plugin enable elliot.network
 omarchy restart shell
 ```
 
 Via SSH (if you use SSH keys):
 
 ```bash
-git clone git@github.com:elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/omarchy.network
+git clone git@github.com:elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/elliot.network
 ```
 
 ## Notes
 
-- The manifest id is `omarchy.network`, the same as the built-in plugin —
-  enabling this replaces the built-in panel. To keep both side by side,
-  copy the folder to a new id (e.g. `my.network`) and update `id` in
-  `manifest.json`.
+- The manifest id is `elliot.network` (cloned from built-in `omarchy.network`) —
+  enabling this replaces the built-in panel. The adapter dropdown appears
+  under the header only when 2+ Wi-Fi radios are present.
 - User plugin code hot-reloads on save; if a change doesn't apply, run
   `omarchy restart shell`.
