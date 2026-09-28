@@ -1766,13 +1766,12 @@ Panel {
     }
 
     readonly property string statusText: {
+      // The right-edge status pill carries Connect / Connected / busy state,
+      // so the second line only surfaces failures. Collapses to zero height
+      // when empty so rows without status keep a tight one-line look.
       if (!net) return ""
       if (isPasswordOpen) return ""
-      if (isBusy && root.actionKind === "connect") return "Connecting…"
-      if (isBusy && root.actionKind === "disconnect") return "Disconnecting…"
-      if (isBusy && root.actionKind === "forget") return "Forgetting…"
       if (isFailed) return root.failureReason || "Failed"
-      if (isConnected) return "Connected"
       return ""
     }
 
@@ -1828,7 +1827,7 @@ Panel {
       anchors.top: parent.top
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
-      implicitHeight: Math.max(networkIcon.implicitHeight, networkInfo.implicitHeight, rightAction.implicitHeight, connectButton.implicitHeight) + Style.spacing.rowPaddingX
+      implicitHeight: Math.max(networkIcon.implicitHeight, networkInfo.implicitHeight, rightAction.implicitHeight, statusPill.implicitHeight) + Style.spacing.rowPaddingX
 
       Text {
         id: networkIcon
@@ -1841,41 +1840,84 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
       }
 
-      // Explicit per-row action: Connect for available networks,
-      // Disconnect for the connected one. Same behavior as clicking the row.
-      Button {
-        id: connectButton
-        visible: !row.isBusy && !row.isPasswordOpen && !!row.net
-        text: row.isConnected ? "Disconnect" : "Connect"
-        tooltipText: row.isConnected ? "Disconnect from this network" : "Connect to this network"
-        fontSize: Style.font.bodySmall
-        foreground: root.bar.foreground
-        fontFamily: root.bar.fontFamily
-        horizontalPadding: Style.spacing.controlPaddingX
-        verticalPadding: Style.spacing.controlPaddingY
-        bordered: true
+      // Status text action: plain clickable text, NO button / pill / box.
+      // No background, no border, ever — just dot + label. Click toggles
+      // the connection, same behavior as clicking the row.
+      Item {
+        id: statusPill
+        // Known (or open) networks get the Connect / Connected text.
+        // Secured unknown networks show the lock icon only — the pill stays
+        // hidden until a connect is actually in flight or fails.
+        visible: !row.isPasswordOpen && !!row.net
+          && (row.isConnected || row.isKnown || !row.requiresCredentials || row.isBusy || row.isFailed)
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        onClicked: {
-          if (!row.net || root.busy) return
-          root.cursorActive = true
-          root.focusSection = "wifi"
-          root.selectedIndex = row.index
-          root.wifiActionFocused = false
-          if (row.isConnected) { root.disconnectRow(row.net.ssid); return }
-          if (row.requiresCredentials && !row.isKnown) { root.openPasswordPrompt(row.net.ssid); return }
-          root.connectDirectly(row.net.ssid)
+        width: Math.max(pillLabel.implicitWidth, Style.space(48))
+        height: Math.max(pillLabel.implicitHeight, Style.space(22))
+        implicitWidth: width
+        implicitHeight: height
+
+        readonly property string pillText: {
+          if (row.isBusy && root.actionKind === "connect") return "Connecting…"
+          if (row.isBusy && root.actionKind === "disconnect") return "Disconnecting…"
+          if (row.isBusy && root.actionKind === "forget") return "Working…"
+          if (row.isFailed) return "Retry"
+          if (row.isConnected) return "Connected"
+          return "Connect"
+        }
+        readonly property bool hot: pillMouse.containsMouse || (root.cursorActive && row.isSelected && !root.wifiActionFocused)
+
+        Text {
+          id: pillLabel
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: statusPill.pillText
+          color: {
+            if (row.isFailed) return root.bar.urgent
+            if (row.isConnected) return root.bar.foreground
+            return Qt.darker(root.bar.foreground, 1.25)
+          }
+          opacity: statusPill.hot && !row.isConnected && !row.isFailed ? 1.0 : (row.isConnected || row.isFailed || statusPill.hot ? 1.0 : 0.75)
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          font.bold: row.isConnected || row.isFailed
+        }
+
+        MouseArea {
+          id: pillMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          acceptedButtons: Qt.LeftButton
+          enabled: !root.busy
+          cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+          onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.focusSection = "wifi"; root.selectedIndex = row.index; root.wifiActionFocused = false }
+          onClicked: {
+            if (!row.net || root.busy) return
+            root.cursorActive = true
+            root.focusSection = "wifi"
+            root.selectedIndex = row.index
+            root.wifiActionFocused = false
+            if (row.isConnected) { root.disconnectRow(row.net.ssid); return }
+            if (row.requiresCredentials && !row.isKnown) { root.openPasswordPrompt(row.net.ssid); return }
+            root.connectDirectly(row.net.ssid)
+          }
+        }
+
+        PanelToolTip {
+          visible: pillMouse.containsMouse
+          text: row.isConnected ? "Disconnect from this network" : row.isFailed ? (root.failureReason || "Connect to this network") : "Connect to this network"
+          fontFamily: root.bar.fontFamily
         }
       }
 
-      // The lock/forget glyph sits left of the Connect button when it shows.
+      // The lock/forget glyph sits left of the status pill when it shows.
       Item {
         id: rightAction
         visible: row.requiresCredentials || row.canForget
         width: Style.space(22)
         implicitHeight: lockIndicator.implicitHeight
-        anchors.right: connectButton.visible ? connectButton.left : parent.right
-        anchors.rightMargin: connectButton.visible ? Style.space(8) : 0
+        anchors.right: statusPill.visible ? statusPill.left : parent.right
+        anchors.rightMargin: statusPill.visible ? Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
@@ -1905,15 +1947,22 @@ Panel {
           anchors.fill: parent
           hoverEnabled: true
           acceptedButtons: Qt.LeftButton
-          enabled: row.canForget && !root.busy
+          // Forget when the network is known; otherwise the lock opens the
+          // passphrase prompt for a secured network we have no credentials for.
+          readonly property bool canPrompt: row.requiresCredentials && !row.isKnown && !row.isConnected && !row.isPasswordOpen
+          enabled: (row.canForget || canPrompt) && !root.busy
           cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-          onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.focusSection = "wifi"; root.selectedIndex = row.index; root.wifiActionFocused = true }
-          onClicked: if (row.net) root.forget(row.net)
+          onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.focusSection = "wifi"; root.selectedIndex = row.index; root.wifiActionFocused = row.canForget }
+          onClicked: {
+            if (!row.net || root.busy) return
+            if (row.canForget) { root.forget(row.net); return }
+            if (row.requiresCredentials && !row.isKnown && !row.isConnected) root.openPasswordPrompt(row.net.ssid)
+          }
         }
 
         PanelToolTip {
-          visible: rightMouse.containsMouse || row.forgetFocused
-          text: "Forget network"
+          visible: (rightMouse.containsMouse && rightMouse.enabled) || row.forgetFocused
+          text: row.canForget ? "Forget network" : "Enter password"
           fontFamily: root.bar.fontFamily
         }
       }
@@ -1923,8 +1972,8 @@ Panel {
         spacing: Style.space(1)
         anchors.left: networkIcon.right
         anchors.leftMargin: Style.space(10)
-        anchors.right: connectButton.visible ? connectButton.left : (rightAction.visible ? rightAction.left : parent.right)
-        anchors.rightMargin: (connectButton.visible || rightAction.visible) ? Style.space(8) : 0
+        anchors.right: rightAction.visible ? rightAction.left : (statusPill.visible ? statusPill.left : parent.right)
+        anchors.rightMargin: (rightAction.visible || statusPill.visible) ? Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
@@ -1939,10 +1988,9 @@ Panel {
         Text {
           textFormat: Text.PlainText
           // Signal strength is conveyed by the wifi-bars icon and the
-          // right-edge glyph/buttons carry protection or forget affordances,
-          // so the second line only carries action status (Connecting…,
-          // Connected, Failed, etc.). Collapses to zero height when empty
-          // so rows without status keep a tight one-line look.
+          // right-edge status pill carries Connect / Connected / busy state,
+          // so the second line only surfaces failures. Collapses to zero
+          // height when empty so rows without status keep a tight one-line look.
           text: row.statusText
           visible: row.statusText !== ""
           height: visible ? implicitHeight : 0
