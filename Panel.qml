@@ -124,6 +124,10 @@ Panel {
   // hidden-SSID row (ssid == "") doesn't collide with the "" defaults.
   property string actionSsid: ""
   property string actionKind: ""  // "connect" | "disconnect" | "forget"
+  // Interface the in-flight connect was started from (selected adapter).
+  // Kept so a successful connect can drop the other radio afterwards and
+  // leave only the newly selected adapter connected.
+  property string connectIface: ""
   property string failureSsid: ""
   property string failureReason: ""
   property string passwordSsid: ""
@@ -805,6 +809,7 @@ Panel {
     var ssid = network.name || ""
     actionSsid = ssid
     actionKind = kind
+    if (kind === "connect") connectIface = selectedIface
     failureSsid = ""
     failureReason = ""
     callback(network)
@@ -814,13 +819,44 @@ Panel {
     actionTimeout.restart()
   }
 
+  // Single-adapter policy: only the newly connected radio stays up.
+  // After a connect succeeds on Wi-Fi 2, any other Wi-Fi radio (e.g. Wi-Fi 1)
+  // is disconnected. Uses `nmcli device disconnect` so it works even when
+  // the other radio's scan list is empty (scanner only runs on the selected
+  // adapter), falling back to the live network object when available.
+  function disconnectOtherWifiAdapters(exceptIface) {
+    var keep = exceptIface || selectedIface
+    var devices = wifiDevices || []
+    for (var i = 0; i < devices.length; i++) {
+      var dev = devices[i]
+      if (!dev) continue
+      var iface = adapterIface(dev)
+      if (!iface || iface === keep) continue
+      if (dev.connected) {
+        Quickshell.execDetached(["nmcli", "device", "disconnect", iface])
+        continue
+      }
+      var nets = (dev.networks) ? dev.networks.values : []
+      for (var j = 0; j < nets.length; j++) {
+        if (nets[j] && nets[j].connected) {
+          nets[j].disconnect()
+          break
+        }
+      }
+    }
+  }
+
   function clearNetworkAction() {
     actionTimeout.stop()
-    if (actionKind === "connect") passwordSsid = ""
+    var wasConnect = actionKind === "connect"
+    var keepIface = connectIface || selectedIface
+    if (wasConnect) passwordSsid = ""
     failureSsid = ""
     failureReason = ""
     actionSsid = ""
     actionKind = ""
+    connectIface = ""
+    if (wasConnect) disconnectOtherWifiAdapters(keepIface)
     refresh()
   }
 
@@ -831,6 +867,7 @@ Panel {
     failureReason = networkFailureReason(reason, requiresCredentials(network.security))
     actionSsid = ""
     actionKind = ""
+    connectIface = ""
     refresh()
   }
 
@@ -1042,6 +1079,7 @@ Panel {
       root.failureReason = reason
       root.actionSsid = ""
       root.actionKind = ""
+      root.connectIface = ""
       root.refresh()
     }
   }

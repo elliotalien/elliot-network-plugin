@@ -6,6 +6,7 @@ cloned from stock `omarchy.network` with:
 - Themed Wi-Fi adapter switcher (Wi-Fi = internal, Wi-Fi 2 = external USB)
   under the header (shows only with 2+ radios)
 - Explicit Connected status text on the active network row (no Button chrome, no Connect label on idle rows — click the row to toggle)
+- Single-adapter policy: connecting on the selected adapter (Wi-Fi / Wi-Fi 2) disconnects the other radio, so only the new adapter stays connected
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 `/usr/share/omarchy/shell/plugins/panels/network/`.
