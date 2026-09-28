@@ -5,7 +5,7 @@ cloned from stock `omarchy.network` with:
 
 - Themed Wi-Fi adapter switcher (Wi-Fi = internal, Wi-Fi 2 = external USB)
   under the header (shows only with 2+ radios)
-- Explicit Connect / Disconnect status pill on each network row (no Button chrome — click the pill or the row to toggle)
+- Explicit Connected status text on the active network row (no Button chrome, no Connect label on idle rows — click the row to toggle)
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 `/usr/share/omarchy/shell/plugins/panels/network/`.

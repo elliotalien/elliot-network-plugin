@@ -1766,7 +1766,7 @@ Panel {
     }
 
     readonly property string statusText: {
-      // The right-edge status pill carries Connect / Connected / busy state,
+      // The right-edge status text carries Connected / busy state,
       // so the second line only surfaces failures. Collapses to zero height
       // when empty so rows without status keep a tight one-line look.
       if (!net) return ""
@@ -1841,15 +1841,15 @@ Panel {
       }
 
       // Status text action: plain clickable text, NO button / pill / box.
-      // No background, no border, ever — just dot + label. Click toggles
-      // the connection, same behavior as clicking the row.
+      // No background, no border, ever — just label. Only shows for the
+      // connected network plus busy / failed states; idle networks show
+      // no Connect text (click the row to connect).
       Item {
         id: statusPill
-        // Known (or open) networks get the Connect / Connected text.
-        // Secured unknown networks show the lock icon only — the pill stays
-        // hidden until a connect is actually in flight or fails.
+        // Only the active / busy / failed row gets status text.
+        // Idle networks stay clean — no "Connect" label.
         visible: !row.isPasswordOpen && !!row.net
-          && (row.isConnected || row.isKnown || !row.requiresCredentials || row.isBusy || row.isFailed)
+          && (row.isConnected || row.isBusy || row.isFailed)
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(pillLabel.implicitWidth, Style.space(48))
@@ -1863,7 +1863,7 @@ Panel {
           if (row.isBusy && root.actionKind === "forget") return "Working…"
           if (row.isFailed) return "Retry"
           if (row.isConnected) return "Connected"
-          return "Connect"
+          return ""
         }
         readonly property bool hot: pillMouse.containsMouse || (root.cursorActive && row.isSelected && !root.wifiActionFocused)
 
@@ -1988,7 +1988,7 @@ Panel {
         Text {
           textFormat: Text.PlainText
           // Signal strength is conveyed by the wifi-bars icon and the
-          // right-edge status pill carries Connect / Connected / busy state,
+          // right-edge status text carries Connected / busy state,
           // so the second line only surfaces failures. Collapses to zero
           // height when empty so rows without status keep a tight one-line look.
           text: row.statusText
