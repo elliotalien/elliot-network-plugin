@@ -93,6 +93,11 @@ Panel {
   readonly property string selectedIface: adapterIface(wifiDevice)
   readonly property var wifiIfaces: (wifiDevices || []).map(function(d) { return adapterIface(d) })
   readonly property bool isNonWifiRoute: !!info.iface && wifiIfaces.indexOf(info.iface) === -1
+  // `info` always describes the default route. When it is Wi-Fi on the other
+  // radio (dropdown views the idle adapter), the stats grid shows "--"
+  // instead of the other adapter's numbers. Non-Wi-Fi routes stay global.
+  readonly property bool selectedIsActiveRoute: !!info.iface && info.iface === selectedIface
+  readonly property bool statsForSelected: isNonWifiRoute || !info.iface || selectedIsActiveRoute
   readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
   readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
   // Header and bar-icon state reflects the live connection on any radio,
@@ -1384,38 +1389,39 @@ Panel {
           // Always mounted: these two used to appear a beat after the panel
           // opened, once the first probe returned, shoving everything below
           // them down. They now hold their place and read "--" until there is
-          // a sample.
+          // a sample — or when the dropdown views the idle radio while the
+          // default route is Wi-Fi on the other adapter.
           InfoLabel { text: "Ping" }
           DetailValue {
-            text: root.formatPingLatency(root.internetPingLatency)
-            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
+            text: root.statsForSelected ? root.formatPingLatency(root.internetPingLatency) : "--"
+            color: (root.statsForSelected && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
           }
           InfoLabel { text: "Packet Loss" }
           DetailValue {
-            text: root.formatPacketLoss(root.internetPingPacketLoss)
-            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
+            text: root.statsForSelected ? root.formatPacketLoss(root.internetPingPacketLoss) : "--"
+            color: (root.statsForSelected && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
           }
 
           InfoLabel { text: "Receiving" }
-          DetailValue { text: root.hasTransferStats ? root.formatRate(root.downloadRate) : "--" }
+          DetailValue { text: (root.statsForSelected && root.hasTransferStats) ? root.formatRate(root.downloadRate) : "--" }
           InfoLabel { text: "Sending" }
-          DetailValue { text: root.hasTransferStats ? root.formatRate(root.uploadRate) : "--" }
+          DetailValue { text: (root.statsForSelected && root.hasTransferStats) ? root.formatRate(root.uploadRate) : "--" }
 
           InfoLabel { text: "Downloaded" }
-          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
+          DetailValue { text: (root.statsForSelected && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
           InfoLabel { text: "Uploaded" }
-          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
+          DetailValue { text: (root.statsForSelected && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
 
           InfoLabel { text: "IP Address" }
           DetailValue {
-            text: root.info.ip || "--"
-            copyable: !!root.info.ip
+            text: root.statsForSelected ? (root.info.ip || "--") : "--"
+            copyable: root.statsForSelected && !!root.info.ip
             tooltipText: "Copy IP"
           }
           InfoLabel { text: "Gateway" }
           DetailValue {
-            text: root.info.gateway || "--"
-            copyable: !!root.info.gateway
+            text: root.statsForSelected ? (root.info.gateway || "--") : "--"
+            copyable: root.statsForSelected && !!root.info.gateway
             tooltipText: "Copy gateway"
           }
         }

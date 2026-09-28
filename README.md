@@ -7,6 +7,7 @@ cloned from stock `omarchy.network` with:
   under the header (shows only with 2+ radios)
 - Explicit Connected status text on the active network row (no Button chrome, no Connect label on idle rows — click the row to toggle)
 - Single-adapter policy: connecting on the selected adapter (Wi-Fi / Wi-Fi 2) disconnects the other radio, so only the new adapter stays connected
+- Connection stats gated to the selected Wi-Fi adapter (`--` on the idle radio instead of the other adapter's numbers; Ethernet/VPN stays global)
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
 `/usr/share/omarchy/shell/plugins/panels/network/`.
