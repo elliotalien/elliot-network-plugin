@@ -164,12 +164,35 @@ function throughputState(previous, next, now) {
 }
 
 // Default-route interface is a VPN tunnel (WireGuard, OpenVPN, Mullvad,
-// Proton, Tailscale, etc.). These never equal a Wi-Fi adapter name, so callers
-// use this to exempt VPN routes from the selected-adapter gate.
+// Proton, Tailscale, etc.). The name match is the ONLY reliable VPN signal —
+// "route iface isn't the wired NIC" also matches bridges, bonds, VLANs and
+// second Ethernet ports, which are not VPNs. wg.* covers wg0, wg-mullvad and
+// wgpia-style provider names.
 function isVpnInterface(iface) {
   var name = String(iface || "").toLowerCase()
   if (!name) return false
-  return /^(tun\d*|tap\d*|wg\d*|wireguard\d*|mullvad.*|proton.*|nordlynx.*|tailscale\d*|zt.*|ppp\d*|ipsec\d*|vpn.*|utun\d*)$/.test(name)
+  return /^(tun\d*|tap\d*|wg.*|wireguard.*|mullvad.*|proton.*|pvpn.*|nord.*|tailscale.*|zt.*|ppp\d*|ipsec.*|vpn.*|utun\d*)$/.test(name)
+}
+
+// Adapter labels for the switcher dropdown. systemd USB wifi path names end
+// in uN (e.g. wlp0s20f0u1) -> "Wi-Fi 2"; PCI radios -> "Wi-Fi". The dropdown
+// resolves the chosen option back to an index by name, so colliding labels
+// (two PCI radios, wlx* USB dongles, 3+ adapters) would make every radio
+// after the first unreachable -- fall back to numbering when names collide.
+function adapterBaseLabel(iface) {
+  return (/u\d+$/.test(String(iface || ""))) ? "Wi-Fi 2" : "Wi-Fi"
+}
+
+function adapterNames(ifaces) {
+  var list = Array.isArray(ifaces) ? ifaces : []
+  if (list.length <= 1) return ["Wi-Fi"]
+  var labels = list.map(adapterBaseLabel)
+  for (var i = 0; i < labels.length; i++) {
+    if (labels.indexOf(labels[i]) !== i) {
+      return list.map(function(_, index) { return "Wi-Fi " + (index + 1) })
+    }
+  }
+  return labels
 }
 
 function pingSampleValue(raw) {
@@ -372,6 +395,8 @@ if (typeof module !== "undefined") {
     parseKeyValue: parseKeyValue,
     throughputState: throughputState,
     isVpnInterface: isVpnInterface,
+    adapterBaseLabel: adapterBaseLabel,
+    adapterNames: adapterNames,
     pingLatencyState: pingLatencyState,
     pingPacketLossPercent: pingPacketLossPercent,
     formatPacketLoss: formatPacketLoss,

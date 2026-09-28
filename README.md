@@ -10,7 +10,8 @@ cloned from stock `omarchy.network` with:
 - Connection stats gated to the selected Wi-Fi adapter (`--` on the idle radio instead of the other adapter's numbers; Ethernet/VPN stays global)
 
 Contents: `Panel.qml`, `Model.js`, `manifest.json` — copied from
-`/usr/share/omarchy/shell/plugins/panels/network/`.
+`/usr/share/omarchy/shell/plugins/panels/network/`. `test.js` holds the
+`Model.js` unit tests — run `node test.js`.
 
 ## Requirements
 

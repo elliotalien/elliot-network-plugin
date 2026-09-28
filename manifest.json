@@ -3,7 +3,7 @@
   "id": "elliot.network",
   "name": "My Network",
   "version": "1.0.0",
-  "author": "Omarchy",
+  "author": "elliotalien",
   "description": "Wi-Fi list and connection state",
   "kinds": [
     "bar-widget"

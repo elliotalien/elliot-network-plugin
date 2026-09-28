@@ -71,7 +71,9 @@ Panel {
   // flip between e.g. Wi-Fi / Wi-Fi 2.
   readonly property var wifiDevices: (networkDevices || []).filter(function(d) { return d && d.type === DeviceType.Wifi })
   property int adapterIndex: 0
-  readonly property var wifiDevice: wifiDevices.length > 0 ? wifiDevices[Math.max(0, Math.min(adapterIndex, wifiDevices.length - 1))] : findDevice(DeviceType.Wifi)
+  // findDevice() scans the same networkDevices list, so an empty wifiDevices
+  // means the fallback could only ever return null anyway.
+  readonly property var wifiDevice: wifiDevices.length > 0 ? wifiDevices[Math.max(0, Math.min(adapterIndex, wifiDevices.length - 1))] : null
   function adapterIface(device) {
     if (!device) return ""
     if (device["interface"]) return String(device["interface"])
@@ -79,16 +81,32 @@ Panel {
     if (device.name) return String(device.name)
     return ""
   }
-  function adapterLabel(device, index) {
-    // wlp2s0 (PCI) is the main internal radio -> "Wi-Fi";
-    // systemd USB names end in uN (e.g. wlp0s20f0u1, the TP-Link dongle) -> "Wi-Fi 2".
-    var iface = adapterIface(device)
-    if (wifiDevices.length <= 1) return "Wi-Fi"
-    return (/u\d+$/.test(iface)) ? "Wi-Fi 2" : "Wi-Fi"
-  }
-  readonly property var adapterNames: wifiDevices.map(function(d, i) { return adapterLabel(d, i) })
+  // Labels are derived from iface names in Model.adapterNames so the dedup
+  // logic is unit-testable. USB path names end in uN (wlp0s20f0u1, the
+  // TP-Link dongle) -> "Wi-Fi 2"; PCI radios -> "Wi-Fi". The dropdown
+  // resolves the chosen option back to an index by name, so colliding labels
+  // (two PCI radios, wlx* USB dongles, 3+ adapters) would make every radio
+  // after the first unreachable — they fall back to numbering.
+  readonly property var adapterNames: Model.adapterNames(wifiIfaces)
   onWifiDevicesChanged: {
     if (adapterIndex > wifiDevices.length - 1) adapterIndex = Math.max(0, wifiDevices.length - 1)
+    // The radio an action was running on vanished: its connect can never
+    // complete now, so release the busy state instead of freezing every row
+    // until the 30s timeout.
+    if (actionIface !== ""
+        && (wifiDevices || []).map(function(d) { return adapterIface(d) }).indexOf(actionIface) === -1) {
+      actionTimeout.stop()
+      actionSsid = ""
+      actionKind = ""
+      actionIface = ""
+      actionNetwork = null
+    }
+  }
+  onAdapterIndexChanged: {
+    // The passphrase prompt lives inside a network row; switching adapters
+    // rebuilds the list, the row vanishes, and keyCatcher stays blocked by
+    // the orphaned prompt state — Esc would reach nothing. Drop the prompt.
+    if (passwordSsid !== "") cancelPasswordPrompt()
   }
   readonly property string selectedIface: adapterIface(wifiDevice)
   readonly property var wifiIfaces: (wifiDevices || []).map(function(d) { return adapterIface(d) })
@@ -129,10 +147,16 @@ Panel {
   // hidden-SSID row (ssid == "") doesn't collide with the "" defaults.
   property string actionSsid: ""
   property string actionKind: ""  // "connect" | "disconnect" | "forget"
-  // Interface the in-flight connect was started from (selected adapter).
-  // Kept so a successful connect can drop the other radio afterwards and
-  // leave only the newly selected adapter connected.
-  property string connectIface: ""
+  // Interface the in-flight action was started from, resolved off the
+  // network object's own device (not just the dropdown) so even the global
+  // disconnect() fallback binds to the right radio. Connect uses it to drop
+  // the other radio on success; the completion/failure checks use it to
+  // ignore same-named networks on the adapter currently being viewed.
+  property string actionIface: ""
+  // The WifiNetwork the in-flight action was started on. Row delegates only
+  // exist for the adapter shown in the dropdown and vanish when it flips
+  // mid-flight, so a root-level Connections watches this object directly.
+  property var actionNetwork: null
   property string failureSsid: ""
   property string failureReason: ""
   property string passwordSsid: ""
@@ -166,7 +190,11 @@ Panel {
   property int headerIndex: 0
   readonly property bool canDisconnect: !!activeWifiNetwork
   readonly property bool headerHasDisconnect: false
-  readonly property bool canShareWifi: (info.type === "wifi" || isNonWifiRoute) && canShareNetwork(activeWifiNetwork)
+  // No network object to inspect when the connected radio's scan list is
+  // empty (the scanner only runs on the selected adapter) — offer share
+  // anyway and let omarchy.wifiqr deal with enterprise, which can't be QR'd.
+  readonly property bool canShareWifi: (info.type === "wifi" || isNonWifiRoute)
+    && (activeWifiNetwork ? canShareNetwork(activeWifiNetwork) : anyWifiDeviceConnected)
   // The hero switch is the Wi-Fi radio, so it only exists when there is a
   // radio to switch. On a wired box it would otherwise sit there reading
   // "off" beside a perfectly live Ethernet connection.
@@ -477,11 +505,11 @@ Panel {
   // icon reflects connection changes without polling. Wired is preferred
   // when both are up, matching the default-route device.
   readonly property var wiredDevice: findDevice(DeviceType.Wired)
-  // VPN vs real Ethernet: both are non-Wi-Fi routes, but a VPN iface never
-  // equals the wired NIC. Name matching is a fallback for when the wired
-  // device object is missing (e.g. USB-Ethernet not typed as Wired).
-  readonly property string wiredIface: adapterIface(wiredDevice)
-  readonly property bool isVpnRoute: isNonWifiRoute && info.iface !== wiredIface || Model.isVpnInterface(info.iface || "")
+  // VPN vs every other non-Wi-Fi route: the interface name is the only
+  // reliable signal. "Route isn't the wired NIC" is not — bridges (br0,
+  // virbr0), bonds, VLANs and a second Ethernet port all fail that test too
+  // and would be mislabeled VPN.
+  readonly property bool isVpnRoute: Model.isVpnInterface(info.iface || "")
   readonly property string kind: {
     if (wiredDevice && wiredDevice.connected) return "ethernet"
     if (anyWifiDeviceConnected) return "wifi"
@@ -814,7 +842,8 @@ Panel {
     var ssid = network.name || ""
     actionSsid = ssid
     actionKind = kind
-    if (kind === "connect") connectIface = selectedIface
+    actionIface = adapterIface(deviceOfNetwork(network)) || selectedIface
+    actionNetwork = network
     failureSsid = ""
     failureReason = ""
     callback(network)
@@ -824,12 +853,29 @@ Panel {
     actionTimeout.restart()
   }
 
+  // Which radio owns this WifiNetwork. Actions resolve their iface off the
+  // object itself rather than the dropdown, so the global disconnect()
+  // fallback (activeWifiNetwork can live on the other adapter) still binds
+  // to the right radio.
+  function deviceOfNetwork(network) {
+    var devices = wifiDevices || []
+    for (var i = 0; i < devices.length; i++) {
+      var nets = devices[i] && devices[i].networks ? devices[i].networks.values : []
+      if (nets.indexOf(network) >= 0) return devices[i]
+    }
+    return wifiDevice
+  }
+
   // Single-adapter policy: only the newly connected radio stays up.
-  // After a connect succeeds on Wi-Fi 2, any other Wi-Fi radio (e.g. Wi-Fi 1)
-  // is disconnected. Always issues `nmcli device disconnect` for the other
-  // iface(s) — harmless if already down — so it works even when the other
-  // radio's scan list is empty (scanner only runs on the selected adapter).
-  // Also drops any live connected network object as a fast-path.
+  // After a connect succeeds, every other Wi-Fi radio that is actually live
+  // gets dropped — the connected network object first (fast-path), then
+  // `nmcli device disconnect` for radios whose scan list is empty (the
+  // scanner only runs on the selected adapter, so the dev.connected flag is
+  // what really decides).
+  // Careful: `nmcli device disconnect` marks the device as manually
+  // disconnected, which blocks its autoconnect until a manual reconnect.
+  // Firing it at an already-idle radio would silently poison that radio's
+  // autoconnect on every connect, so it is gated on dev.connected.
   function disconnectOtherWifiAdapters(exceptIface) {
     var keep = exceptIface || selectedIface
     var devices = wifiDevices || []
@@ -845,32 +891,38 @@ Panel {
           break
         }
       }
-      Quickshell.execDetached(["nmcli", "device", "disconnect", iface])
+      if (dev.connected) Quickshell.execDetached(["nmcli", "device", "disconnect", iface])
     }
   }
 
   function clearNetworkAction() {
     actionTimeout.stop()
     var wasConnect = actionKind === "connect"
-    var keepIface = connectIface || selectedIface
+    var keepIface = actionIface || selectedIface
     if (wasConnect) passwordSsid = ""
     failureSsid = ""
     failureReason = ""
     actionSsid = ""
     actionKind = ""
-    connectIface = ""
+    actionIface = ""
+    actionNetwork = null
     if (wasConnect) disconnectOtherWifiAdapters(keepIface)
     refresh()
   }
 
   function failNetworkAction(network, reason) {
     if (!network || actionKind === "" || actionSsid !== (network.name || "")) return
+    // A same-named network on the adapter currently being viewed must not
+    // fail an action running on another radio — same gate as
+    // checkActionCompletion.
+    if (network !== actionNetwork && actionIface !== "" && actionIface !== selectedIface) return
     actionTimeout.stop()
     failureSsid = actionSsid
     failureReason = networkFailureReason(reason, requiresCredentials(network.security))
     actionSsid = ""
     actionKind = ""
-    connectIface = ""
+    actionIface = ""
+    actionNetwork = null
     refresh()
   }
 
@@ -884,6 +936,12 @@ Panel {
 
   function checkActionCompletion(network) {
     if (!network || actionKind === "" || actionSsid !== (network.name || "")) return
+    // Row delegates only ever carry the selected adapter's networks, so while
+    // the dropdown views another radio a same-named network here is a
+    // different connection — it must not complete the action (or prematurely
+    // trigger the other-adapter disconnect for it). The tracked actionNetwork
+    // itself always passes, whatever adapter it lives on.
+    if (network !== actionNetwork && actionIface !== "" && actionIface !== selectedIface) return
     if (actionKind === "connect" && network.connected) clearNetworkAction()
     else if (actionKind === "disconnect" && !network.connected && !network.stateChanging) clearNetworkAction()
     else if (actionKind === "forget" && !network.known && !network.stateChanging) clearNetworkAction()
@@ -1082,9 +1140,35 @@ Panel {
       root.failureReason = reason
       root.actionSsid = ""
       root.actionKind = ""
-      root.connectIface = ""
+      root.actionIface = ""
+      root.actionNetwork = null
       root.refresh()
     }
+  }
+
+  // Watches the action's own network object directly. Row delegates only
+  // exist for the adapter shown in the dropdown, so without this a connect
+  // that outlives an adapter switch would run with nobody watching —
+  // completion, failure and the single-adapter cleanup all depend on these
+  // signals landing.
+  Connections {
+    target: root.actionNetwork
+    function onConnectionFailed(reason) {
+      var net = root.actionNetwork
+      // Capture before failNetworkAction clears the action state: only
+      // reprompt when this was OUR connect, and only while its adapter is
+      // still the one being viewed (the prompt lives inside a visible row).
+      var ours = net && root.actionKind === "connect" && root.actionSsid === (net.name || "")
+      var onActionAdapter = root.actionIface === root.selectedIface
+      root.failNetworkAction(net, reason)
+      if (ours && onActionAdapter
+          && root.shouldRepromptPassphrase(reason, root.requiresCredentials(net.security))) {
+        root.openPasswordPrompt(net.name || "")
+      }
+    }
+    function onConnectedChanged() { root.checkActionCompletion(root.actionNetwork) }
+    function onKnownChanged() { root.checkActionCompletion(root.actionNetwork) }
+    function onStateChangingChanged() { root.checkActionCompletion(root.actionNetwork) }
   }
 
   BarIconButton {
