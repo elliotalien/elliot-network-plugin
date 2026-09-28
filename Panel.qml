@@ -91,9 +91,8 @@ Panel {
     if (adapterIndex > wifiDevices.length - 1) adapterIndex = Math.max(0, wifiDevices.length - 1)
   }
   readonly property string selectedIface: adapterIface(wifiDevice)
-  // `info` always describes the default route, so its numbers only belong to
-  // the dropdown selection when the selected adapter carries that route.
-  readonly property bool selectedIsActiveRoute: !!info.iface && info.iface === selectedIface
+  readonly property var wifiIfaces: (wifiDevices || []).map(function(d) { return adapterIface(d) })
+  readonly property bool isNonWifiRoute: !!info.iface && wifiIfaces.indexOf(info.iface) === -1
   readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
   readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
   // Header and bar-icon state reflects the live connection on any radio,
@@ -158,7 +157,7 @@ Panel {
   property int headerIndex: 0
   readonly property bool canDisconnect: !!activeWifiNetwork
   readonly property bool headerHasDisconnect: false
-  readonly property bool canShareWifi: info.type === "wifi" && canShareNetwork(activeWifiNetwork)
+  readonly property bool canShareWifi: (info.type === "wifi" || isNonWifiRoute) && canShareNetwork(activeWifiNetwork)
   // The hero switch is the Wi-Fi radio, so it only exists when there is a
   // radio to switch. On a wired box it would otherwise sit there reading
   // "off" beside a perfectly live Ethernet connection.
@@ -469,6 +468,11 @@ Panel {
   // icon reflects connection changes without polling. Wired is preferred
   // when both are up, matching the default-route device.
   readonly property var wiredDevice: findDevice(DeviceType.Wired)
+  // VPN vs real Ethernet: both are non-Wi-Fi routes, but a VPN iface never
+  // equals the wired NIC. Name matching is a fallback for when the wired
+  // device object is missing (e.g. USB-Ethernet not typed as Wired).
+  readonly property string wiredIface: adapterIface(wiredDevice)
+  readonly property bool isVpnRoute: isNonWifiRoute && info.iface !== wiredIface || Model.isVpnInterface(info.iface || "")
   readonly property string kind: {
     if (wiredDevice && wiredDevice.connected) return "ethernet"
     if (anyWifiDeviceConnected) return "wifi"
@@ -741,7 +745,8 @@ Panel {
     controller.hide()
     cancelPasswordPrompt()
     var connection = ""
-    if (info.type === "wifi") connection = info.ssid || "Wi-Fi"
+    if (root.isVpnRoute) connection = "VPN"
+    else if (info.type === "wifi") connection = info.ssid || "Wi-Fi"
     else if (info.type === "ethernet") connection = "Ethernet"
     bar.shell.summon("omarchy.speedtest", connection ? JSON.stringify({ connection: connection }) : "{}")
   }
@@ -989,7 +994,7 @@ Panel {
   Timer {
     id: connectionPhraseTimer
     interval: 2800
-    running: root.opened && (root.info.type === "ethernet" || (root.info.type === "wifi" && root.canDisconnect))
+    running: root.opened && (root.isVpnRoute || root.info.type === "ethernet" || (root.info.type === "wifi" && root.canDisconnect))
     repeat: true
     onTriggered: connectionPhraseSwap.restart()
   }
@@ -1012,7 +1017,7 @@ Panel {
   Connections {
     target: root
     function onInfoChanged() {
-      if (!(root.info.type === "ethernet" || (root.info.type === "wifi" && root.canDisconnect))) {
+      if (!(root.isVpnRoute || root.info.type === "ethernet" || (root.info.type === "wifi" && root.canDisconnect))) {
         connectionPhraseSwap.stop()
         heroMeta.opacity = 1.0
       }
@@ -1263,6 +1268,10 @@ Panel {
             width: parent.width
 
             readonly property string title: {
+              if (root.isVpnRoute) {
+                if (root.activeWifiNetwork && root.activeWifiNetwork.name) return root.activeWifiNetwork.name + " (VPN)"
+                return "VPN"
+              }
               if (root.info.type === "wifi") return root.info.ssid || "Wi-Fi"
               if (root.info.type === "ethernet") return "Ethernet"
               return root.info.iface || (root.kind === "disconnected" ? "Disconnected" : "No connection")
@@ -1282,6 +1291,7 @@ Panel {
             textFormat: Text.PlainText
             width: parent.width
             text: {
+              if (root.isVpnRoute) return root.connectionPhrase.toUpperCase()
               if (root.info.type === "wifi") {
                 if (root.canDisconnect) return root.connectionPhrase.toUpperCase()
                 if (root.kind === "disconnected") return "NOT CONNECTED"
@@ -1341,35 +1351,35 @@ Panel {
           // a sample.
           InfoLabel { text: "Ping" }
           DetailValue {
-            text: root.selectedIsActiveRoute ? root.formatPingLatency(root.internetPingLatency) : "--"
-            color: (root.selectedIsActiveRoute && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
+            text: root.formatPingLatency(root.internetPingLatency)
+            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
           }
           InfoLabel { text: "Packet Loss" }
           DetailValue {
-            text: root.selectedIsActiveRoute ? root.formatPacketLoss(root.internetPingPacketLoss) : "--"
-            color: (root.selectedIsActiveRoute && root.internetPingPacketLoss > 0) ? root.bar.urgent : root.bar.foreground
+            text: root.formatPacketLoss(root.internetPingPacketLoss)
+            color: root.internetPingPacketLoss > 0 ? root.bar.urgent : root.bar.foreground
           }
 
           InfoLabel { text: "Receiving" }
-          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatRate(root.downloadRate) : "--" }
+          DetailValue { text: root.hasTransferStats ? root.formatRate(root.downloadRate) : "--" }
           InfoLabel { text: "Sending" }
-          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatRate(root.uploadRate) : "--" }
+          DetailValue { text: root.hasTransferStats ? root.formatRate(root.uploadRate) : "--" }
 
           InfoLabel { text: "Downloaded" }
-          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
+          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.rx_bytes || "0")) : "--" }
           InfoLabel { text: "Uploaded" }
-          DetailValue { text: (root.selectedIsActiveRoute && root.hasTransferStats) ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
+          DetailValue { text: root.hasTransferStats ? root.formatBytes(parseFloat(root.info.tx_bytes || "0")) : "--" }
 
           InfoLabel { text: "IP Address" }
           DetailValue {
-            text: root.selectedIsActiveRoute ? (root.info.ip || "--") : "--"
-            copyable: root.selectedIsActiveRoute && !!root.info.ip
+            text: root.info.ip || "--"
+            copyable: !!root.info.ip
             tooltipText: "Copy IP"
           }
           InfoLabel { text: "Gateway" }
           DetailValue {
-            text: root.selectedIsActiveRoute ? (root.info.gateway || "--") : "--"
-            copyable: root.selectedIsActiveRoute && !!root.info.gateway
+            text: root.info.gateway || "--"
+            copyable: !!root.info.gateway
             tooltipText: "Copy gateway"
           }
         }

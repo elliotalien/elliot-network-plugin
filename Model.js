@@ -163,6 +163,15 @@ function throughputState(previous, next, now) {
   }
 }
 
+// Default-route interface is a VPN tunnel (WireGuard, OpenVPN, Mullvad,
+// Proton, Tailscale, etc.). These never equal a Wi-Fi adapter name, so callers
+// use this to exempt VPN routes from the selected-adapter gate.
+function isVpnInterface(iface) {
+  var name = String(iface || "").toLowerCase()
+  if (!name) return false
+  return /^(tun\d*|tap\d*|wg\d*|wireguard\d*|mullvad.*|proton.*|nordlynx.*|tailscale\d*|zt.*|ppp\d*|ipsec\d*|vpn.*|utun\d*)$/.test(name)
+}
+
 function pingSampleValue(raw) {
   var value = parseFloat(raw)
   if (!isFinite(value) || value < 0) return null
@@ -362,6 +371,7 @@ if (typeof module !== "undefined") {
     decodeIwSsid: decodeIwSsid,
     parseKeyValue: parseKeyValue,
     throughputState: throughputState,
+    isVpnInterface: isVpnInterface,
     pingLatencyState: pingLatencyState,
     pingPacketLossPercent: pingPacketLossPercent,
     formatPacketLoss: formatPacketLoss,
