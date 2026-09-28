@@ -821,9 +821,10 @@ Panel {
 
   // Single-adapter policy: only the newly connected radio stays up.
   // After a connect succeeds on Wi-Fi 2, any other Wi-Fi radio (e.g. Wi-Fi 1)
-  // is disconnected. Uses `nmcli device disconnect` so it works even when
-  // the other radio's scan list is empty (scanner only runs on the selected
-  // adapter), falling back to the live network object when available.
+  // is disconnected. Always issues `nmcli device disconnect` for the other
+  // iface(s) — harmless if already down — so it works even when the other
+  // radio's scan list is empty (scanner only runs on the selected adapter).
+  // Also drops any live connected network object as a fast-path.
   function disconnectOtherWifiAdapters(exceptIface) {
     var keep = exceptIface || selectedIface
     var devices = wifiDevices || []
@@ -832,10 +833,6 @@ Panel {
       if (!dev) continue
       var iface = adapterIface(dev)
       if (!iface || iface === keep) continue
-      if (dev.connected) {
-        Quickshell.execDetached(["nmcli", "device", "disconnect", iface])
-        continue
-      }
       var nets = (dev.networks) ? dev.networks.values : []
       for (var j = 0; j < nets.length; j++) {
         if (nets[j] && nets[j].connected) {
@@ -843,6 +840,7 @@ Panel {
           break
         }
       }
+      Quickshell.execDetached(["nmcli", "device", "disconnect", iface])
     }
   }
 
