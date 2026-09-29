@@ -101,12 +101,24 @@ Panel {
       actionIface = ""
       actionNetwork = null
     }
+    // A suppressed adapter that vanished has nothing to restore — its device
+    // object carries a fresh autoconnect flag if it ever comes back.
+    if (suppressedAutoconnectIface !== ""
+        && (wifiDevices || []).map(function(d) { return adapterIface(d) }).indexOf(suppressedAutoconnectIface) === -1) {
+      suppressedAutoconnectIface = ""
+    }
   }
   onAdapterIndexChanged: {
     // The passphrase prompt lives inside a network row; switching adapters
     // rebuilds the list, the row vanishes, and keyCatcher stays blocked by
     // the orphaned prompt state — Esc would reach nothing. Drop the prompt.
     if (passwordSsid !== "") cancelPasswordPrompt()
+    // The list now shows a different radio. Disarm the wifi cursor so a stray
+    // Enter/Space after the switch can't fire connect/disconnect on a row that
+    // was highlighted on the previous adapter.
+    cursorActive = false
+    wifiActionFocused = false
+    if (focusSection === "wifi") focusSection = "dns"
   }
   readonly property string selectedIface: adapterIface(wifiDevice)
   readonly property var wifiIfaces: (wifiDevices || []).map(function(d) { return adapterIface(d) })
@@ -157,8 +169,16 @@ Panel {
   // exist for the adapter shown in the dropdown and vanish when it flips
   // mid-flight, so a root-level Connections watches this object directly.
   property var actionNetwork: null
+  // Iface whose NetworkManager autoconnect is suppressed because it is the
+  // currently-viewed idle adapter. Restored the moment it stops being the
+  // idle selection, the panel closes, it comes up by any means, or the
+  // plugin is destroyed — never left applied.
+  property string suppressedAutoconnectIface: ""
   property string failureSsid: ""
   property string failureReason: ""
+  // Adapter the failure belonged to — a same-named SSID on the other radio
+  // must not inherit the Retry badge.
+  property string failureIface: ""
   property string passwordSsid: ""
   property string passwordText: ""
   property string identityText: ""
@@ -382,12 +402,29 @@ Panel {
 
   Component.onDestruction: {
     if (scannerDevice) scannerDevice.scannerEnabled = false
+    if (suppressedAutoconnectIface !== "") setAutoconnect(suppressedAutoconnectIface, true)
+  }
+
+  // The suppressed adapter coming up by any means — a panel connect, an
+  // nmcli/nmtui session, or NetworkManager itself — ends its reason for
+  // suppression; restore normal autoconnect immediately.
+  Connections {
+    target: root.wifiDevice
+    function onConnectedChanged() { root.suppressAutoconnectForIdleSelection() }
   }
 
   // KeyboardPanel primes layer-shell focus whenever the panel opens. That's
   // what makes the SUPER+CTRL+W keybind land here with navigation ready.
   onOpenedChanged: {
     if (opened) {
+      // Snap the dropdown to the radio actually carrying a connection before
+      // the first refresh: a remembered selection only makes sense while
+      // that adapter is still connected — otherwise reopening the panel
+      // would sit on a dead adapter while the live one is on the other entry.
+      adapterIndex = Model.selectConnectedIndex(
+        (wifiDevices || []).map(function(d) { return !!(d && d.connected) }),
+        adapterIndex)
+      suppressAutoconnectForIdleSelection()
       refresh(true)
       selectedIndex = wifiNetworks.length > 0 ? 0 : -1
       wifiActionFocused = false
@@ -413,6 +450,10 @@ Panel {
       internetPingLatency = -1
       internetPingPacketLoss = 0
       setScannerEnabled(false)
+      // `opened` is false here, so this restores whatever adapter the panel
+      // was suppressing — autoconnect must not stay off after the panel goes
+      // away.
+      suppressAutoconnectForIdleSelection()
     }
   }
 
@@ -453,6 +494,9 @@ Panel {
   }
 
   onWifiDeviceChanged: {
+    // Suppress before the scanner goes on: enabling a scan is what gives
+    // NetworkManager the visibility it needs to autoconnect the idle radio.
+    suppressAutoconnectForIdleSelection()
     setScannerEnabled(true)
     syncWifiNetworks()
   }
@@ -844,13 +888,59 @@ Panel {
     actionKind = kind
     actionIface = adapterIface(deviceOfNetwork(network)) || selectedIface
     actionNetwork = network
+    if (kind === "connect" && actionIface !== "") {
+      // An explicit connect is the one moment an adapter may come up: undo
+      // the autoconnect suppression a merely-viewed adapter was under so the
+      // profile also auto-reconnects afterwards.
+      setAutoconnect(actionIface, true)
+      if (actionIface === suppressedAutoconnectIface) suppressedAutoconnectIface = ""
+    }
     failureSsid = ""
     failureReason = ""
+    failureIface = ""
     callback(network)
     // Safety net: if onExited never fires (process death, signal handler
     // throws, etc.), clear the busy state so the row doesn't get stuck on
     // "Connecting…" / "Disconnecting…" forever.
     actionTimeout.restart()
+  }
+
+  // Viewing an adapter in the dropdown is not a request to use it: enabling
+  // its scanner makes NetworkManager notice the saved networks on that radio
+  // and autoconnect it — the "switch" must only happen on an explicit
+  // connect. Autoconnect is therefore suppressed only for the *currently
+  // viewed* idle adapter, and restored the moment it stops qualifying:
+  // selection moves away, the panel closes, the adapter comes up by any
+  // means (nmcli/nmtui connects work regardless — the flag only gates
+  // automatic activation), or the plugin is destroyed.
+  // Gated on `opened` (at boot wifiDevice resolves before it has connected,
+  // and suppressing then would block the normal autoconnect entirely) and on
+  // 2+ radios (a single idle radio keeps stock behavior — its panel-triggered
+  // scan autoconnecting is the only join path it has).
+  function suppressAutoconnectForIdleSelection() {
+    var want = ""
+    if (opened && wifiDevices.length >= 2 && wifiDevice && !wifiDevice.connected)
+      want = adapterIface(wifiDevice)
+    if (suppressedAutoconnectIface === want) return
+    if (suppressedAutoconnectIface !== "")
+      setAutoconnect(suppressedAutoconnectIface, true)
+    suppressedAutoconnectIface = want
+    if (want !== "")
+      setAutoconnect(want, false)
+  }
+
+  function setAutoconnect(iface, enabled) {
+    // NetworkDevice.autoconnect maps to NetworkManager's device Autoconnect
+    // flag — same effect as `nmcli device set <iface> autoconnect`, but a
+    // direct in-process write instead of a spawned nmcli (which lands ~100ms+
+    // late, after the first panel-triggered scan has already run).
+    var devices = wifiDevices || []
+    for (var i = 0; i < devices.length; i++) {
+      if (devices[i] && adapterIface(devices[i]) === iface) {
+        devices[i].autoconnect = enabled
+        return
+      }
+    }
   }
 
   // Which radio owns this WifiNetwork. Actions resolve their iface off the
@@ -919,6 +1009,7 @@ Panel {
     actionTimeout.stop()
     failureSsid = actionSsid
     failureReason = networkFailureReason(reason, requiresCredentials(network.security))
+    failureIface = actionIface
     actionSsid = ""
     actionKind = ""
     actionIface = ""
@@ -1138,6 +1229,7 @@ Panel {
       else reason = "Timed out forgetting"
       root.failureSsid = root.actionSsid
       root.failureReason = reason
+      root.failureIface = root.actionIface
       root.actionSsid = ""
       root.actionKind = ""
       root.actionIface = ""
@@ -1210,8 +1302,11 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       // Freeze the cursor model while the inline password prompt is open;
-      // the TextField inside owns input until Esc/Enter/Cancel.
-      blocked: root.passwordSsid !== ""
+      // the TextField inside owns input until Esc/Enter/Cancel. The adapter
+      // dropdown owns keys while its popup is open — without this, j/k move
+      // the wifi cursor and Enter/Space activate the highlighted row behind
+      // the popup.
+      blocked: root.passwordSsid !== "" || adapterBox.popupOpen
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) {
@@ -1455,6 +1550,13 @@ Panel {
             root.adapterIndex = idx
             root.refresh(true)
           }
+          // selectCurrent() assigns `value` imperatively, which destroys the
+          // binding above — the label would freeze on the last pick while
+          // adapterIndex snaps back to the connected radio on reopen. Reattach
+          // so programmatic selection changes always stay visible.
+          adapterBox.value = Qt.binding(function() {
+            return root.adapterNames[Math.max(0, Math.min(root.adapterIndex, root.adapterNames.length - 1))] || ""
+          })
         }
       }
 
@@ -1860,8 +1962,12 @@ Panel {
     currentFill: root.selectedFill
     // Gate on the matching *Kind/*Reason being non-empty so a hidden-SSID
     // row (ssid == "") doesn't match the "" defaults of actionSsid etc.
+    // The iface checks keep a same-named SSID on the other radio from
+    // inheriting this adapter's busy/failed badge.
     readonly property bool isBusy: root.actionKind !== "" && root.actionSsid === (net ? net.ssid : "")
+      && (root.actionIface === "" || root.actionIface === root.selectedIface)
     readonly property bool isFailed: root.failureReason !== "" && root.failureSsid === (net ? net.ssid : "")
+      && (root.failureIface === "" || root.failureIface === root.selectedIface)
     readonly property bool isPasswordOpen: root.passwordSsid !== "" && root.passwordSsid === (net ? net.ssid : "")
 
     function submitCredentials() {
@@ -2136,6 +2242,7 @@ Panel {
       onTriggered: {
         root.failureSsid = ""
         root.failureReason = ""
+        root.failureIface = ""
         pwField.forceActiveFocus()
       }
     }

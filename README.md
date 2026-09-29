@@ -15,6 +15,25 @@ cloned from stock `omarchy.network`.
 - Connection stats are gated to the selected adapter — the idle radio
   reads `--` instead of showing the other adapter's numbers. Ethernet
   and VPN routes stay global.
+- Selecting an adapter in the dropdown is view-only: the viewed radio's
+  NetworkManager autoconnect is suppressed while it's idle so its saved
+  networks can't be joined just because a scan ran, and the connected
+  adapter is never dropped by a selection change. Suppression follows
+  the selection — it is restored the moment you switch away, close the
+  panel, connect explicitly, or the adapter comes up by any means
+  (nmcli/nmtui connects are unaffected either way; the flag only gates
+  *automatic* activation).
+- On open, the dropdown snaps to the radio carrying the connection — a
+  remembered selection only survives while that adapter is still
+  connected. The label binding is re-attached after every pick because
+  `Dropdown`'s internal `value = v` assignment would otherwise freeze it
+  on the last pick, mislabeling wifi1's list/stats as wifi2.
+- While the dropdown popup is open the panel's key catcher is suspended
+  (canonical `popupOpen` wiring), so j/k/Enter/Esc drive the option list
+  instead of leaking through to the wifi rows behind it — a leaked Enter
+  used to fire `connect()` on the highlighted network. Switching adapters
+  also disarms the wifi cursor, so a stray activate can't hit a row that
+  was highlighted on the previously viewed radio.
 
 ### Single-adapter policy
 - Connecting on one adapter disconnects the other live radios, so only

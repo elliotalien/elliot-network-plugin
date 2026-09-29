@@ -86,6 +86,15 @@ assert.deepStrictEqual(
   M.adapterNames(["wlp2s0", "wlp5s0", "wlp0s20f0u1"]),
   ["Wi-Fi 1", "Wi-Fi 2", "Wi-Fi 3"])
 
+// selectConnectedIndex: reopening snaps to the radio carrying the connection
+assert.strictEqual(M.selectConnectedIndex([true, false], 1), 0)  // idle selection -> live radio
+assert.strictEqual(M.selectConnectedIndex([true, false], 0), 0)  // already on live radio
+assert.strictEqual(M.selectConnectedIndex([true, true], 1), 1)   // connected selection is kept
+assert.strictEqual(M.selectConnectedIndex([false, true], 0), 1)
+assert.strictEqual(M.selectConnectedIndex([false, false], 1), 1) // nothing up -> keep for browsing
+assert.strictEqual(M.selectConnectedIndex([], 0), 0)             // no radios
+assert.strictEqual(M.selectConnectedIndex([false, false], -1), 0)
+
 // ping helpers
 var st = M.pingLatencyState(null, { iface: "wlan0", router_ping_ms: "5", internet_ping_ms: "20" }, 24, 5)
 assert.strictEqual(st.routerPingLatency, 5)

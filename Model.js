@@ -195,6 +195,21 @@ function adapterNames(ifaces) {
   return labels
 }
 
+// Which adapter the dropdown should show. A remembered selection only makes
+// sense while that radio is still connected -- reopening the panel on an idle
+// adapter while another carries the connection would show a dead adapter. So:
+// keep `selected` if it is connected, else take the first connected radio,
+// else keep `selected` (nothing is up; browsing any adapter is equally valid).
+function selectConnectedIndex(connectedFlags, selected) {
+  var flags = Array.isArray(connectedFlags) ? connectedFlags : []
+  var index = Math.max(0, selected | 0)
+  if (flags[index]) return index
+  for (var i = 0; i < flags.length; i++) {
+    if (flags[i]) return i
+  }
+  return index
+}
+
 function pingSampleValue(raw) {
   var value = parseFloat(raw)
   if (!isFinite(value) || value < 0) return null
@@ -397,6 +412,7 @@ if (typeof module !== "undefined") {
     isVpnInterface: isVpnInterface,
     adapterBaseLabel: adapterBaseLabel,
     adapterNames: adapterNames,
+    selectConnectedIndex: selectConnectedIndex,
     pingLatencyState: pingLatencyState,
     pingPacketLossPercent: pingPacketLossPercent,
     formatPacketLoss: formatPacketLoss,
