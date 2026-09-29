@@ -308,6 +308,22 @@ function formatPingLatency(ms, hasSamples) {
   return value.toFixed(value > 0 && value < 10 ? 1 : 0) + " ms"
 }
 
+// Two radios can both report the same SSID as connected (e.g. PADMALAYAM on
+// the PCI card and the USB dongle), but only the adapter carrying the
+// default route (info.iface) is actually in use. When the route iface is a
+// Wi-Fi adapter, "connected" belongs to that adapter alone: every other
+// radio's copy of the SSID must render as a normal known network — no
+// Connected pill, sorted with the knowns, click = connect/switch instead of
+// disconnect. An empty or non-Wi-Fi route (Ethernet, VPN tunnel, no route)
+// keeps the per-adapter flag as reported.
+function displayConnected(reported, adapterIface, routeIface, wifiIfaces) {
+  var route = String(routeIface || "")
+  if (route === "") return !!reported
+  var ifaces = Array.isArray(wifiIfaces) ? wifiIfaces : []
+  if (ifaces.indexOf(route) === -1) return !!reported
+  return !!reported && String(adapterIface || "") === route
+}
+
 function wifiRow(network) {
   if (!network) return null
   // Primitives only: rows become list-model data, so a WifiNetwork here puts a
@@ -420,6 +436,7 @@ if (typeof module !== "undefined") {
     formatRate: formatRate,
     formatPingLatency: formatPingLatency,
     wifiRow: wifiRow,
+    displayConnected: displayConnected,
     sortWifiRows: sortWifiRows,
     wifiSectionTitle: wifiSectionTitle,
     requiresCredentials: requiresCredentials,

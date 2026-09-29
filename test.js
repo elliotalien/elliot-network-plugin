@@ -134,6 +134,67 @@ assert.strictEqual(M.wifiSectionTitle(sorted, 2), "OTHER NETWORKS")
 assert.strictEqual(M.wifiSectionTitle(sorted, 1), "")
 assert.strictEqual(M.wifiSectionTitle([], 0), "")
 
+// displayConnected: only the radio carrying the default route may show
+// "Connected". Two radios associated to the same SSID (PADMALAYAM) both
+// report connected=true per-adapter, but the idle one renders as a normal
+// known network.
+var ifaces = ["wlp2s0", "wlp0s20f0u1"]
+// Wi-Fi route: only the owning adapter's rows keep the flag
+assert.strictEqual(M.displayConnected(true, "wlp2s0", "wlp2s0", ifaces), true)
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "wlp2s0", ifaces), false)
+assert.strictEqual(M.displayConnected(false, "wlp2s0", "wlp2s0", ifaces), false)
+// Empty / non-Wi-Fi route: per-adapter flags stand as reported
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "", ifaces), true)
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "enp3s0", ifaces), true)
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "wg0", ifaces), true)
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "wlp2s0", null), true)
+assert.strictEqual(M.displayConnected(true, "wlp0s20f0u1", "wlp2s0", []), true)
+
+// End-to-end row pipeline mirroring syncWifiNetworks(): same SSID reported
+// connected on both radios, viewed per adapter.
+function viewRows(nets, selIface, routeIface, wifiIfaces) {
+  var rows = []
+  for (var i = 0; i < nets.length; i++) {
+    var r = M.wifiRow(nets[i])
+    if (r) {
+      r.connected = M.displayConnected(r.connected, selIface, routeIface, wifiIfaces)
+      rows.push(r)
+    }
+  }
+  return M.sortWifiRows(rows)
+}
+var padmalayamIdle = { connected: true, known: true, name: "PADMALAYAM", signalStrength: 0.6, security: "wpa2" }
+var padmalayamRoute = { connected: true, known: true, name: "PADMALAYAM", signalStrength: 0.9, security: "wpa2" }
+var otherKnown = { connected: false, known: true, name: "OTHERNET", signalStrength: 0.8, security: "wpa2" }
+
+// Viewing the idle radio: PADMALAYAM loses its Connected badge and sorts
+// with the knowns by signal (OTHERNET 80 > PADMALAYAM 60).
+var idleView = viewRows([padmalayamIdle, otherKnown], "wlp0s20f0u1", "wlp2s0", ifaces)
+assert.strictEqual(idleView[0].ssid, "OTHERNET")
+assert.strictEqual(idleView[1].ssid, "PADMALAYAM")
+assert.strictEqual(idleView[1].connected, false)
+assert.strictEqual(M.wifiSectionTitle(idleView, 0), "KNOWN NETWORKS")
+assert.strictEqual(M.wifiSectionTitle(idleView, 1), "")
+// The demoted row is a normal known network: forgettable, click connects.
+assert.strictEqual(M.canForgetNetwork(idleView[1]), true)
+
+// Viewing the route-owning radio: Connected badge survives and pins the row
+// to the top despite the weaker-signal known network.
+var routeView = viewRows([otherKnown, padmalayamRoute], "wlp2s0", "wlp2s0", ifaces)
+assert.strictEqual(routeView[0].ssid, "PADMALAYAM")
+assert.strictEqual(routeView[0].connected, true)
+assert.strictEqual(M.canForgetNetwork(routeView[0]), false)
+assert.strictEqual(M.wifiSectionTitle(routeView, 0), "KNOWN NETWORKS")
+
+// Ethernet/VPN route: the idle radio's own Connected badge still shows.
+var ethView = viewRows([padmalayamIdle, otherKnown], "wlp0s20f0u1", "enp3s0", ifaces)
+assert.strictEqual(ethView[0].ssid, "PADMALAYAM")
+assert.strictEqual(ethView[0].connected, true)
+var vpnView = viewRows([padmalayamIdle, otherKnown], "wlp0s20f0u1", "wg-mullvad", ifaces)
+assert.strictEqual(vpnView[0].connected, true)
+var noRouteView = viewRows([padmalayamIdle, otherKnown], "wlp0s20f0u1", "", ifaces)
+assert.strictEqual(noRouteView[0].connected, true)
+
 // credentials / forget
 assert.strictEqual(M.requiresCredentials("wpa2", "open", "owe"), true)
 assert.strictEqual(M.requiresCredentials("open", "open", "owe"), false)

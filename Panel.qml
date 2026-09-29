@@ -107,6 +107,9 @@ Panel {
         && (wifiDevices || []).map(function(d) { return adapterIface(d) }).indexOf(suppressedAutoconnectIface) === -1) {
       suppressedAutoconnectIface = ""
     }
+    // wifiIfaces membership feeds displayConnected; a radio vanishing can
+    // lift or apply the route-owner override without any scan change.
+    syncWifiNetworks()
   }
   onAdapterIndexChanged: {
     // The passphrase prompt lives inside a network row; switching adapters
@@ -122,6 +125,9 @@ Panel {
   }
   readonly property string selectedIface: adapterIface(wifiDevice)
   readonly property var wifiIfaces: (wifiDevices || []).map(function(d) { return adapterIface(d) })
+  // Default-route interface as a plain string. The displayed Connected flag
+  // follows it (Model.displayConnected), so rows rebuild when it changes.
+  readonly property string routeIface: info.iface || ""
   readonly property bool isNonWifiRoute: !!info.iface && wifiIfaces.indexOf(info.iface) === -1
   // `info` always describes the default route. When it is Wi-Fi on the other
   // radio (dropdown views the idle adapter), the stats grid shows "--"
@@ -503,6 +509,11 @@ Panel {
 
   onWifiNetworkObjectsChanged: syncWifiNetworks()
 
+  // Rows display Connected only for the route-owning radio, so a route move
+  // (other radio takes over, Ethernet/VPN wins, route drops) must repaint
+  // them even though the scan list itself is unchanged.
+  onRouteIfaceChanged: syncWifiNetworks()
+
   function selectByDelta(delta) {
     if (wifiNetworks.length === 0) { selectedIndex = -1; return }
     if (selectedIndex < 0) selectedIndex = delta > 0 ? 0 : wifiNetworks.length - 1
@@ -774,7 +785,10 @@ Panel {
       if (!network) continue
       checkActionCompletion(network)
       var row = Model.wifiRow(network)
-      if (row) nets.push(row)
+      if (row) {
+        row.connected = Model.displayConnected(row.connected, selectedIface, routeIface, wifiIfaces)
+        nets.push(row)
+      }
     }
     wifiNetworks = Model.sortWifiRows(nets)
     wifiStationAvailable = !!wifiDevice
