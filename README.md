@@ -1,81 +1,45 @@
 # elliot-network-plugin
 
-Custom Omarchy network panel plugin (Wi-Fi list and connection state),
-cloned from stock `omarchy.network`.
+Omarchy bar-widget plugin for network status: a Wi-Fi network list with
+per-adapter connection state, stats, and controls — built for machines
+with more than one Wi-Fi radio.
 
-## Differences from stock omarchy.network
+## Features
 
-### Multi-adapter support
-- Wi-Fi adapter switcher dropdown under the header (shows only with 2+
-  radios). Labels come from interface names: PCI radios → "Wi-Fi",
-  USB-path names (`wlp0s20f0u1`) → "Wi-Fi 2"; colliding labels fall back
-  to numbering ("Wi-Fi 1", "Wi-Fi 2", …) so every radio stays selectable.
+- Wi-Fi network list with connect / disconnect / forget, plus inline
+  passphrase and 802.1X enterprise prompts.
+- Adapter switcher dropdown when 2+ Wi-Fi radios are present. Labels
+  come from interface names (USB-path names like `wlp0s20f0u1` →
+  "Wi-Fi 2"); colliding labels fall back to numbering so every radio
+  stays selectable.
+- The `Connected` badge follows the default route: when two radios are
+  joined to the same SSID, only the one carrying traffic shows it — the
+  idle radio lists the SSID as a normal known network, and clicking it
+  connects/switches instead of disconnecting.
 - Header and bar icon reflect the live connection on **any** radio, not
   just the adapter being viewed.
-- Connection stats are gated to the selected adapter — the idle radio
-  reads `--` instead of showing the other adapter's numbers. Ethernet
-  and VPN routes stay global.
-- Selecting an adapter in the dropdown is view-only: the viewed radio's
-  NetworkManager autoconnect is suppressed while it's idle so its saved
-  networks can't be joined just because a scan ran, and the connected
-  adapter is never dropped by a selection change. Suppression follows
-  the selection — it is restored the moment you switch away, close the
-  panel, connect explicitly, or the adapter comes up by any means
-  (nmcli/nmtui connects are unaffected either way; the flag only gates
-  *automatic* activation).
-- On open, the dropdown snaps to the radio carrying the connection — a
-  remembered selection only survives while that adapter is still
-  connected. The label binding is re-attached after every pick because
-  `Dropdown`'s internal `value = v` assignment would otherwise freeze it
-  on the last pick, mislabeling wifi1's list/stats as wifi2.
-- While the dropdown popup is open the panel's key catcher is suspended
-  (canonical `popupOpen` wiring), so j/k/Enter/Esc drive the option list
-  instead of leaking through to the wifi rows behind it — a leaked Enter
-  used to fire `connect()` on the highlighted network. Switching adapters
-  also disarms the wifi cursor, so a stray activate can't hit a row that
-  was highlighted on the previously viewed radio.
-
-### Single-adapter policy
-- Connecting on one adapter disconnects the other live radios, so only
-  the newly selected adapter stays connected. Idle radios are left
-  alone — `nmcli device disconnect` only fires on radios that are
-  actually connected, so it never marks an idle radio
-  manually-disconnected (which would block its autoconnect until a
-  manual reconnect).
+- Connection stats (IP, gateway, ping, throughput) are gated to the
+  selected adapter — an idle radio reads `--` instead of showing the
+  other adapter's numbers. Ethernet and VPN routes stay global.
+- View-only browsing: viewing an idle adapter suppresses its
+  NetworkManager autoconnect so a panel-triggered scan can't join its
+  saved networks. Suppression is restored on switch-away, panel close,
+  explicit connect, or if the radio comes up by any other means.
+- Single-adapter policy: connecting on one radio disconnects the other
+  live radios (only radios that are actually connected are dropped, so
+  an idle radio's autoconnect is never poisoned).
+- On open, the dropdown snaps to the radio carrying the connection.
 - In-flight connect / disconnect / forget actions are bound to the
-  adapter that started them: a same-named network on the adapter being
-  viewed can't complete or fail another radio's action, and switching
-  the dropdown mid-connect doesn't lose the action's completion or
-  failure signals.
-
-### Row UI
-- No "Connect" label on idle rows — click the row to connect.
-- Connected / busy / failed state shows as right-edge status text
-  (`Connected` · `Connecting…` · `Disconnecting…` · `Working…` ·
-  `Retry`) instead of button chrome or a second status line.
-- The lock glyph opens the passphrase prompt for secured networks with
-  no saved credentials; the same glyph reveals Forget for known
-  networks.
-
-### VPN
-- VPN default routes (tun/tap/wg*/wireguard/mullvad/proton/pvpn/nord/
-  tailscale/ppp/ipsec/vpn/utun/zt) are detected by interface name and
-  shown as "SSID (VPN)" — real Ethernet, bridges, bonds and VLANs are
-  never mislabeled VPN.
-- The speed test payload reports "VPN" for tunnel routes.
-
-### Robustness
-- Passphrase prompt cancels when its adapter leaves view; busy state
-  releases immediately if the action's radio is unplugged.
-- Bar icon falls back to cached signal strength while the panel is
-  closed and the scan list is empty.
-
-Everything else — keyboard navigation, band selection, DNS provider
-pills, QR share, speed test, IPC target `omarchy.network` — is stock.
-
-Contents: `Panel.qml`, `Model.js`, `manifest.json` — originally copied
-from `/usr/share/omarchy/shell/plugins/panels/network/`. `test.js`
-holds the `Model.js` unit tests — run `node test.js`.
+  radio that started them — a same-named network on the viewed adapter
+  can't complete or fail another radio's action.
+- Row states render as right-edge text: `Connected` · `Connecting…` ·
+  `Disconnecting…` · `Working…` · `Retry`.
+- Keyboard navigation (j/k/Enter/Esc), Wi-Fi band selection
+  (2.4/5/6 GHz), DNS provider pills, QR share, speed test.
+- VPN default routes (tun/tap/wg*/mullvad/proton/tailscale/…) are
+  detected by interface name and shown as "SSID (VPN)" — Ethernet,
+  bridges, bonds and VLANs are never mislabeled.
+- IPC target `omarchy.network`.
 
 ## Requirements
 
@@ -108,11 +72,42 @@ Via SSH (if you use SSH keys):
 git clone git@github.com:elliotalien/elliot-network-plugin.git ~/.config/omarchy/plugins/elliot.network
 ```
 
-## Notes
+## Update
 
-- The manifest id is `elliot.network` (cloned from built-in
-  `omarchy.network`) — enabling this replaces the built-in panel. The
-  adapter dropdown appears under the header only when 2+ Wi-Fi radios
-  are present.
-- User plugin code hot-reloads on save; if a change doesn't apply, run
-  `omarchy restart shell`.
+```bash
+omarchy plugin update elliot.network
+omarchy restart shell
+```
+
+## Uninstall
+
+Disable it (keeps the files, removes the widget from the bar):
+
+```bash
+omarchy plugin disable elliot.network
+omarchy restart shell
+```
+
+Remove it entirely:
+
+```bash
+omarchy plugin remove elliot.network
+omarchy restart shell
+```
+
+Manual removal equivalent:
+
+```bash
+omarchy plugin disable elliot.network
+rm -rf ~/.config/omarchy/plugins/elliot.network
+omarchy restart shell
+```
+
+## Development
+
+Contents: `Panel.qml` (panel UI + wiring), `Model.js` (pure logic),
+`manifest.json`. `test.js` holds the `Model.js` unit tests — run
+`node test.js`.
+
+User plugin code hot-reloads on save; if a change doesn't apply, run
+`omarchy restart shell`.
