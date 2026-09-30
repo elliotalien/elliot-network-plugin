@@ -4,6 +4,7 @@
   "name": "My Network",
   "version": "1.0.0",
   "author": "elliotalien",
+  "license": "MIT",
   "description": "Wi-Fi list and connection state",
   "kinds": [
     "bar-widget"
@@ -16,8 +17,5 @@
     "description": "Wi-Fi list and connection state",
     "category": "Network",
     "allowMultiple": false
-  },
-  "omarchy": {
-    "clonedFrom": "omarchy.network"
   }
 }

@@ -8,7 +8,7 @@ with more than one Wi-Fi radio.
 
 | Connected radio | Idle radio |
 | --- | --- |
-| ![Panel viewing the connected Wi-Fi 2 adapter](screenshots/connected.png) | ![Panel viewing the idle Wi-Fi adapter](screenshots/idle-adapter.png) |
+| ![Panel viewing the connected Wi-Fi 2 adapter](preview/connected.png) | ![Panel viewing the idle Wi-Fi adapter](preview/idle-adapter.png) |
 
 Stats are per-adapter: viewing the idle radio reads `--` while the other
 radio carries the connection.
