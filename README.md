@@ -4,6 +4,15 @@ Omarchy bar-widget plugin for network status: a Wi-Fi network list with
 per-adapter connection state, stats, and controls — built for machines
 with more than one Wi-Fi radio.
 
+## Screenshots
+
+| Connected radio | Idle radio |
+| --- | --- |
+| ![Panel viewing the connected Wi-Fi 2 adapter](screenshots/connected.png) | ![Panel viewing the idle Wi-Fi adapter](screenshots/idle-adapter.png) |
+
+Stats are per-adapter: viewing the idle radio reads `--` while the other
+radio carries the connection.
+
 ## Features
 
 - Wi-Fi network list with connect / disconnect / forget, plus inline
