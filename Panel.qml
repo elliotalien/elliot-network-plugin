@@ -1970,10 +1970,12 @@ Panel {
     readonly property bool forgetVisible: canForget && (!requiresCredentials || forgetFocused || rightMouse.containsMouse)
 
     hasCursor: root.cursorActive && isSelected && !root.wifiActionFocused
-    current: isConnected
+    // No background for the connected row — state is shown via the
+    // right-edge "Connected" text only.
+    current: false
     foreground: root.bar.foreground
     fill: root.hoverFill
-    currentFill: root.selectedFill
+    currentFill: "transparent"
     // Gate on the matching *Kind/*Reason being non-empty so a hidden-SSID
     // row (ssid == "") doesn't match the "" defaults of actionSsid etc.
     // The iface checks keep a same-named SSID on the other radio from
