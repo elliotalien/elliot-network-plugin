@@ -115,8 +115,7 @@ omarchy restart shell
 ## Development
 
 Contents: `Panel.qml` (panel UI + wiring), `Model.js` (pure logic),
-`manifest.json`. `test.js` holds the `Model.js` unit tests — run
-`node test.js`.
+`manifest.json`.
 
 User plugin code hot-reloads on save; if a change doesn't apply, run
 `omarchy restart shell`.
