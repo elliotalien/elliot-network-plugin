@@ -120,3 +120,7 @@ Contents: `Panel.qml` (panel UI + wiring), `Model.js` (pure logic),
 
 User plugin code hot-reloads on save; if a change doesn't apply, run
 `omarchy restart shell`.
+
+## License
+
+[MIT](LICENSE)
