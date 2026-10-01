@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -26,6 +27,9 @@ Panel {
     passwordSsid = ""
     passwordText = ""
     identityText = ""
+    caMode = "system"
+    caFilePath = ""
+    domainText = ""
   }
 
   // Live connection details from `ip` / /sys / iw.
@@ -188,6 +192,13 @@ Panel {
   property string passwordSsid: ""
   property string passwordText: ""
   property string identityText: ""
+  // 802.1X server verification for the enterprise prompt. caMode "system"
+  // verifies the RADIUS server against the OS trust store, "file" against
+  // caFilePath; "none" sets no CA at all and is insecure. domainText pins
+  // the server certificate name via 802-1x.domain-suffix-match.
+  property string caMode: "system"
+  property string caFilePath: ""
+  property string domainText: ""
 
   // ConnectionFailReason values as a plain object, so Model.js helpers stay
   // pure JS and Node-testable.
@@ -876,6 +887,9 @@ Panel {
     if (passwordSsid !== ssid) {
       passwordText = ""
       identityText = ""
+      caMode = "system"
+      caFilePath = ""
+      domainText = ""
     }
     passwordSsid = ssid
   }
@@ -1060,10 +1074,10 @@ Panel {
     runNetworkAction("connect", networkForSsid(ssid), function(network) { network.connectWithPsk(passphrase) })
   }
 
-  function connectEnterprise(ssid, identity, passphrase) {
+  function connectEnterprise(ssid, identity, passphrase, caMode, caFile, domain) {
     runNetworkAction("connect", networkForSsid(ssid), function(network) {
       enterpriseConnect.secret = passphrase
-      enterpriseConnect.command = ["bash", "-c", Model.enterpriseConnectScript, "nmcli-eap", ssid, identity]
+      enterpriseConnect.command = ["bash", "-c", Model.enterpriseConnectScript, "nmcli-eap", ssid, identity, caMode, caFile, domain]
       enterpriseConnect.running = true
     })
   }
@@ -1078,6 +1092,16 @@ Panel {
       write(secret + "\n")
       secret = ""
     }
+  }
+
+  function openCaFilePicker() { caFileDialog.open() }
+
+  // CA certificate picker backing the enterprise prompt's "CA file" mode.
+  FileDialog {
+    id: caFileDialog
+    title: "Select CA certificate"
+    nameFilters: ["Certificates (*.pem *.crt *.cer *.der)", "All files (*)"]
+    onAccepted: root.caFilePath = decodeURIComponent(String(selectedFile).replace(/^file:\/\//, ""))
   }
 
   function disconnect(network) {
@@ -1989,7 +2013,9 @@ Panel {
     function submitCredentials() {
       if (!net || root.busy || root.passwordText.length === 0) return
       if (!isEnterprise) return root.connectWithPassphrase(net.ssid, root.passwordText)
-      if (root.identityText.length > 0) root.connectEnterprise(net.ssid, root.identityText, root.passwordText)
+      if (root.identityText.length === 0) return
+      if (root.caMode === "file" && root.caFilePath === "") return
+      root.connectEnterprise(net.ssid, root.identityText, root.passwordText, root.caMode, root.caFilePath, root.domainText)
     }
 
     Connections {
@@ -2276,7 +2302,9 @@ Panel {
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
       anchors.topMargin: Style.space(4)
-      implicitHeight: (idField.visible ? idField.implicitHeight + Style.space(4) : 0) + pwField.implicitHeight + Style.spacing.rowGap
+      implicitHeight: (idField.visible ? idField.implicitHeight + Style.space(4) : 0)
+        + (enterpriseBox.visible ? enterpriseBox.implicitHeight + Style.space(4) : 0)
+        + pwField.implicitHeight + Style.spacing.rowGap
       height: implicitHeight
 
       TextField {
@@ -2295,12 +2323,87 @@ Panel {
         enabled: !row.isBusy
         text: row.isPasswordOpen ? root.identityText : ""
 
-        onAccepted: pwField.forceActiveFocus()
+        onAccepted: domainField.forceActiveFocus()
         onTextChanged: if (row.isPasswordOpen && text !== root.identityText) root.identityText = text
         Keys.onEscapePressed: root.cancelPasswordPrompt()
 
         onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
         Component.onCompleted: if (visible) Qt.callLater(forceActiveFocus)
+      }
+
+      // 802.1X server verification. Without a trusted CA or a pinned server
+      // domain a rogue AP can impersonate the authentication server and
+      // capture the MSCHAPv2 exchange, so "system" is the default and "none"
+      // is labelled insecure.
+      Column {
+        id: enterpriseBox
+        visible: row.isEnterprise && !row.isBusy && !row.isFailed
+        anchors.left: parent.left
+        anchors.right: connectPwBtn.left
+        anchors.top: idField.bottom
+        anchors.topMargin: Style.space(4)
+        anchors.rightMargin: Style.space(6)
+        spacing: Style.space(4)
+
+        ButtonGroup {
+          width: parent.width
+          options: [
+            { value: "system", label: "System CAs", tooltip: "Verify the server against the system CA store" },
+            { value: "file", label: "CA file…", tooltip: "Verify with a specific CA certificate file" },
+            { value: "none", label: "None (insecure)", tooltip: "No server verification — a rogue AP could steal these credentials" }
+          ]
+          value: root.caMode
+          foreground: root.bar.foreground
+          fontFamily: root.bar.fontFamily
+          fontSize: Style.font.bodySmall
+          focusable: false
+          onChanged: function(v) { root.caMode = v }
+        }
+
+        Row {
+          visible: root.caMode === "file"
+          width: parent.width
+          height: visible ? implicitHeight : 0
+          spacing: Style.space(6)
+
+          PanelActionButton {
+            id: caPickButton
+            iconText: "󰝰"
+            tooltipText: "Select CA certificate…"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            onClicked: root.openCaFilePicker()
+          }
+
+          Text {
+            width: parent.width - caPickButton.width - parent.spacing
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.caFilePath !== "" ? root.caFilePath : "No CA certificate selected"
+            textFormat: Text.PlainText
+            color: root.bar.foreground
+            opacity: root.caFilePath !== "" ? 1 : 0.6
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideMiddle
+          }
+        }
+
+        TextField {
+          id: domainField
+          width: parent.width
+          placeholderText: "Server domain (optional)"
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          foreground: root.bar.foreground
+          horizontalPadding: Style.spacing.controlGap
+          verticalPadding: Style.spacing.controlPaddingY
+          enabled: !row.isBusy
+          text: row.isPasswordOpen ? root.domainText : ""
+
+          onAccepted: pwField.forceActiveFocus()
+          onTextChanged: if (row.isPasswordOpen && text !== root.domainText) root.domainText = text
+          Keys.onEscapePressed: root.cancelPasswordPrompt()
+        }
       }
 
       TextField {
@@ -2360,7 +2463,9 @@ Panel {
         visible: !row.isBusy && !row.isFailed
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        enabled: row.net && pwField.text.length > 0 && (!row.isEnterprise || idField.text.length > 0)
+        enabled: row.net && pwField.text.length > 0
+          && (!row.isEnterprise || (idField.text.length > 0
+            && (root.caMode !== "file" || root.caFilePath !== "")))
         iconText: "󰄬"
         tooltipText: "Connect"
         foreground: root.bar.foreground

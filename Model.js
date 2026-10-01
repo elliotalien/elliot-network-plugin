@@ -379,11 +379,23 @@ function canForgetNetwork(network) {
 // `connection edit` editor -- argv is world-readable in /proc, so the secret
 // must never be an argument (printf is a bash builtin, so no process spawns
 // with it either).
+//
+// Args: $1 ssid, $2 identity, $3 ca mode ("system" | "file" | "none"),
+// $4 ca file path (mode "file" only), $5 server domain (optional).
+// "system" verifies the RADIUS server against the OS trust store, "file"
+// against a user-supplied CA certificate; "none" sets no CA at all and is
+// insecure -- without a trusted CA or a pinned domain a rogue AP can
+// impersonate the authentication server and capture the MSCHAPv2 exchange.
 var enterpriseConnectScript =
-  "u=$(uuidgen); IFS= read -r pw;" +
+  "u=$(uuidgen); IFS= read -r pw; args=();" +
+  " case \"$3\" in" +
+  " system) args+=(802-1x.system-ca-certs yes);;" +
+  " file) args+=(802-1x.ca-cert \"$4\");;" +
+  " esac;" +
+  " [ -n \"$5\" ] && args+=(802-1x.domain-suffix-match \"$5\");" +
   " nmcli connection add type wifi con-name \"$1\" ssid \"$1\" connection.uuid \"$u\"" +
   " wifi-sec.key-mgmt wpa-eap 802-1x.eap peap 802-1x.phase2-auth mschapv2" +
-  " 802-1x.identity \"$2\" 802-1x.auth-timeout 8 >/dev/null" +
+  " 802-1x.identity \"$2\" 802-1x.auth-timeout 8 \"${args[@]}\" >/dev/null" +
   " && printf 'set 802-1x.password %s\\nsave\\nquit\\n' \"$pw\" | nmcli connection edit uuid \"$u\" >/dev/null" +
   " && nmcli connection up uuid \"$u\"" +
   " || { nmcli connection delete uuid \"$u\" >/dev/null 2>&1; false; }"

@@ -16,7 +16,9 @@ radio carries the connection.
 ## Features
 
 - Wi-Fi network list with connect / disconnect / forget, plus inline
-  passphrase and 802.1X enterprise prompts.
+  passphrase and 802.1X enterprise prompts. PEAP/MSCHAPv2 profiles verify
+  the RADIUS server — system CAs (default), a chosen CA file, or an
+  optional domain-suffix match — so a rogue AP can't harvest credentials.
 - Adapter switcher dropdown when 2+ Wi-Fi radios are present. Labels
   come from interface names (USB-path names like `wlp0s20f0u1` →
   "Wi-Fi 2"); colliding labels fall back to numbering so every radio
@@ -115,7 +117,8 @@ omarchy restart shell
 ## Development
 
 Contents: `Panel.qml` (panel UI + wiring), `Model.js` (pure logic),
-`manifest.json`.
+`manifest.json`. `test.js` holds the `Model.js` unit tests — run
+`node test.js`.
 
 User plugin code hot-reloads on save; if a change doesn't apply, run
 `omarchy restart shell`.
