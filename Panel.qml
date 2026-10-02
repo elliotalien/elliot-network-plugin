@@ -2015,7 +2015,8 @@ Panel {
       if (!isEnterprise) return root.connectWithPassphrase(net.ssid, root.passwordText)
       if (root.identityText.length === 0) return
       if (root.caMode === "file" && root.caFilePath === "") return
-      root.connectEnterprise(net.ssid, root.identityText, root.passwordText, root.caMode, root.caFilePath, root.domainText)
+      if (root.caMode === "system" && root.domainText.trim() === "") return
+      root.connectEnterprise(net.ssid, root.identityText, root.passwordText, root.caMode, root.caFilePath, root.domainText.trim())
     }
 
     Connections {
@@ -2348,7 +2349,7 @@ Panel {
         ButtonGroup {
           width: parent.width
           options: [
-            { value: "system", label: "System CAs", tooltip: "Verify the server against the system CA store" },
+            { value: "system", label: "System CAs", tooltip: "Verify the server against the system CA store — requires the server domain" },
             { value: "file", label: "CA file…", tooltip: "Verify with a specific CA certificate file" },
             { value: "none", label: "None (insecure)", tooltip: "No server verification — a rogue AP could steal these credentials" }
           ]
@@ -2391,7 +2392,7 @@ Panel {
         TextField {
           id: domainField
           width: parent.width
-          placeholderText: "Server domain (optional)"
+          placeholderText: root.caMode === "system" ? "Server domain (required)" : "Server domain (optional)"
           font.family: Style.font.family
           font.pixelSize: Style.font.body
           foreground: root.bar.foreground
@@ -2465,7 +2466,8 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         enabled: row.net && pwField.text.length > 0
           && (!row.isEnterprise || (idField.text.length > 0
-            && (root.caMode !== "file" || root.caFilePath !== "")))
+            && (root.caMode !== "file" || root.caFilePath !== "")
+            && (root.caMode !== "system" || root.domainText.trim() !== "")))
         iconText: "󰄬"
         tooltipText: "Connect"
         foreground: root.bar.foreground

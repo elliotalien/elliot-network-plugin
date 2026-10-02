@@ -17,8 +17,8 @@ radio carries the connection.
 
 - Wi-Fi network list with connect / disconnect / forget, plus inline
   passphrase and 802.1X enterprise prompts. PEAP/MSCHAPv2 profiles verify
-  the RADIUS server — system CAs (default), a chosen CA file, or an
-  optional domain-suffix match — so a rogue AP can't harvest credentials.
+  the RADIUS server — system CAs pinned by the required server domain
+  (default) or a chosen CA file — so a rogue AP can't harvest credentials.
 - Adapter switcher dropdown when 2+ Wi-Fi radios are present. Labels
   come from interface names (USB-path names like `wlp0s20f0u1` →
   "Wi-Fi 2"); colliding labels fall back to numbering so every radio

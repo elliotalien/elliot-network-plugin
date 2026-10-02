@@ -164,4 +164,8 @@ assert.ok(M.enterpriseConnectScript.indexOf("802-1x.system-ca-certs") !== -1)
 assert.ok(M.enterpriseConnectScript.indexOf("802-1x.ca-cert") !== -1)
 assert.ok(M.enterpriseConnectScript.indexOf("802-1x.domain-suffix-match") !== -1)
 
+// "system" mode refuses a blank domain: a public CA chain alone doesn't pin
+// the server name, so a rogue AP could use any publicly trusted cert.
+assert.ok(M.enterpriseConnectScript.indexOf('[ "$3" = system ] && [ -z "$5" ] && exit 1') !== -1)
+
 console.log("All tests passed")

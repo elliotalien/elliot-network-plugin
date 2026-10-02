@@ -381,17 +381,21 @@ function canForgetNetwork(network) {
 // with it either).
 //
 // Args: $1 ssid, $2 identity, $3 ca mode ("system" | "file" | "none"),
-// $4 ca file path (mode "file" only), $5 server domain (optional).
-// "system" verifies the RADIUS server against the OS trust store, "file"
-// against a user-supplied CA certificate; "none" sets no CA at all and is
-// insecure -- without a trusted CA or a pinned domain a rogue AP can
-// impersonate the authentication server and capture the MSCHAPv2 exchange.
+// $4 ca file path (mode "file" only), $5 server domain. "system"
+// verifies the RADIUS server against the OS trust store, "file" against
+// a user-supplied CA certificate; "none" sets no CA at all and is
+// insecure. A public CA chain alone doesn't pin the server name -- a
+// rogue AP can hold a publicly trusted cert for its own domain -- so
+// "system" requires the domain for domain-suffix-match; without a
+// trusted CA plus a pinned name a rogue AP can impersonate the
+// authentication server and capture the MSCHAPv2 exchange.
 var enterpriseConnectScript =
   "u=$(uuidgen); IFS= read -r pw; args=();" +
   " case \"$3\" in" +
   " system) args+=(802-1x.system-ca-certs yes);;" +
   " file) args+=(802-1x.ca-cert \"$4\");;" +
   " esac;" +
+  " [ \"$3\" = system ] && [ -z \"$5\" ] && exit 1;" +
   " [ -n \"$5\" ] && args+=(802-1x.domain-suffix-match \"$5\");" +
   " nmcli connection add type wifi con-name \"$1\" ssid \"$1\" connection.uuid \"$u\"" +
   " wifi-sec.key-mgmt wpa-eap 802-1x.eap peap 802-1x.phase2-auth mschapv2" +
