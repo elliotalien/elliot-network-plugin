@@ -30,6 +30,9 @@ Panel {
     caMode = "system"
     caFilePath = ""
     domainText = ""
+    // Staged for the enterprise process's stdin: if it never started, the
+    // passphrase would linger here after the prompt is gone.
+    enterpriseConnect.secret = ""
   }
 
   // Live connection details from `ip` / /sys / iw.
@@ -1092,6 +1095,17 @@ Panel {
       write(secret + "\n")
       secret = ""
     }
+    // The script cleans up its profile and exits nonzero on pre-auth failures
+    // (missing domain, unreadable CA file, nmcli syntax errors) without any
+    // NetworkManager signal — fail the row fast instead of hanging the full
+    // 30s actionTimeout. A nonzero exit after the network still connected is
+    // not a failure.
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && root.actionKind === "connect"
+          && root.actionNetwork && !root.actionNetwork.connected) {
+        root.failNetworkAction(root.actionNetwork, ConnectionFailReason.WifiClientFailed)
+      }
+    }
   }
 
   function openCaFilePicker() { caFileDialog.open() }
@@ -1101,7 +1115,13 @@ Panel {
     id: caFileDialog
     title: "Select CA certificate"
     nameFilters: ["Certificates (*.pem *.crt *.cer *.der)", "All files (*)"]
-    onAccepted: root.caFilePath = decodeURIComponent(String(selectedFile).replace(/^file:\/\//, ""))
+    onAccepted: {
+      // selectedFile is a percent-encoded file:// URL; decodeURIComponent
+      // throws on a malformed sequence, so keep the raw path as fallback.
+      var path = String(selectedFile).replace(/^file:\/\//, "")
+      try { path = decodeURIComponent(path) } catch (e) {}
+      root.caFilePath = path
+    }
   }
 
   function disconnect(network) {
