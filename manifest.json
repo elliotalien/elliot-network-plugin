@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "elliotalien",
   "license": "MIT",
-  "description": "Wi-Fi list and connection state",
+  "description": "Multi-radio Wi-Fi panel: browse networks per adapter with per-adapter connection state and stats (IP, gateway, ping, throughput), connect/disconnect/forget, DNS provider switching, QR share, speed test, and VPN route labeling.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "My Network",
-    "description": "Wi-Fi list and connection state",
+    "description": "Multi-radio Wi-Fi panel with per-adapter connection state",
     "category": "Network",
     "allowMultiple": false
   }
